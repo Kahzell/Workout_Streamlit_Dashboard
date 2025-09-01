@@ -8,3 +8,4 @@ auth.yaml
 setup_github.py
 DEPLOYMENT_GUIDE.md
 secrets.toml
+.streamlit/

@@ -65,19 +65,38 @@ def authenticate():
     # Try to load from secrets first, then fall back to local file
     config = None
     try:
-        if "auth" in st.secrets:
-            config = st.secrets["auth"]
+        # Check if we have auth secrets configured
+        if hasattr(st, 'secrets') and "auth" in st.secrets:
+            # Convert secrets to regular dict (secrets are read-only)
+            config = dict(st.secrets["auth"])
+            # Convert nested sections to regular dicts
+            if "credentials" in config:
+                config["credentials"] = dict(config["credentials"])
+                if "usernames" in config["credentials"]:
+                    config["credentials"]["usernames"] = dict(config["credentials"]["usernames"])
+                    # Convert each user to dict
+                    for username in config["credentials"]["usernames"]:
+                        config["credentials"]["usernames"][username] = dict(config["credentials"]["usernames"][username])
+            if "cookie" in config:
+                config["cookie"] = dict(config["cookie"])
         else:
             # Fallback to local auth.yaml file
             cfg_path = "auth.yaml"
             if not os.path.exists(cfg_path):
                 st.error("auth.yaml not found and no auth secrets configured.")
+                st.error("For local development: Create auth.yaml file")
+                st.error("For Streamlit Cloud: Configure secrets in app settings")
                 st.stop()
             
             with open(cfg_path, "r") as f:
                 config = yaml.safe_load(f)
     except Exception as e:
         st.error(f"Failed to load authentication config: {e}")
+        st.error("Make sure .streamlit/secrets.toml exists or auth.yaml is configured")
+        st.stop()
+    
+    if not config:
+        st.error("No authentication configuration found")
         st.stop()
     
     authenticator = stauth.Authenticate(
@@ -582,14 +601,24 @@ def get_workout_insights(workout_rows):
 def github_env():
     try:
         # Use Streamlit secrets for cloud deployment, fallback to env vars for local dev
-        token = st.secrets.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
-        repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
-        branch = st.secrets.get("GITHUB_BRANCH", "main") or os.environ.get("GITHUB_BRANCH", "main")
-        path_strength = st.secrets.get("GITHUB_FILEPATH_STRENGTH", "data/workouts.csv") or os.environ.get("GITHUB_FILEPATH_STRENGTH", "data/workouts.csv")
-        path_cardio = st.secrets.get("GITHUB_FILEPATH_CARDIO", "data/cardio.csv") or os.environ.get("GITHUB_FILEPATH_CARDIO", "data/cardio.csv")
+        if hasattr(st, 'secrets') and "github" in st.secrets:
+            github_secrets = st.secrets["github"]
+            token = github_secrets.get("token")
+            repo = github_secrets.get("repo")
+            branch = github_secrets.get("branch", "main")
+            path_strength = github_secrets.get("path_strength", "data/workouts.csv")
+            path_cardio = github_secrets.get("path_cardio", "data/cardio.csv")
+        else:
+            # Fallback to environment variables
+            token = os.environ.get("GITHUB_TOKEN")
+            repo = os.environ.get("GITHUB_REPO")
+            branch = os.environ.get("GITHUB_BRANCH", "main")
+            path_strength = os.environ.get("GITHUB_FILEPATH_STRENGTH", "data/workouts.csv")
+            path_cardio = os.environ.get("GITHUB_FILEPATH_CARDIO", "data/cardio.csv")
+        
         return token, repo, branch, path_strength, path_cardio
     except Exception:
-        # Fallback to environment variables only
+        # Final fallback to environment variables only
         token = os.environ.get("GITHUB_TOKEN")
         repo = os.environ.get("GITHUB_REPO")
         branch = os.environ.get("GITHUB_BRANCH", "main")
