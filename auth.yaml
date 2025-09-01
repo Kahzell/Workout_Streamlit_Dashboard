@@ -1,7 +1,7 @@
 credentials:
   usernames:
     you:
-      email: tijmenmolder@gmail.com
+      email: xxxxx@gmail.com
       name: You
       password: TestPassword123  # Will be auto-hashed on first run
 cookie:
