@@ -62,23 +62,31 @@ def authenticate():
         st.error(f"Auth dependencies not installed: {e}")
         st.stop()
     
+    def deep_dict_convert(obj):
+        """Recursively convert secrets objects to regular dicts"""
+        if hasattr(obj, 'to_dict'):
+            # If it has a to_dict method, use it
+            return deep_dict_convert(obj.to_dict())
+        elif hasattr(obj, '__dict__'):
+            # Convert object with attributes to dict
+            return {k: deep_dict_convert(v) for k, v in obj.__dict__.items()}
+        elif isinstance(obj, dict):
+            # Convert dict recursively
+            return {k: deep_dict_convert(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            # Convert lists/tuples recursively
+            return [deep_dict_convert(item) for item in obj]
+        else:
+            # Return primitive types as-is
+            return obj
+    
     # Try to load from secrets first, then fall back to local file
     config = None
     try:
         # Check if we have auth secrets configured
         if hasattr(st, 'secrets') and "auth" in st.secrets:
-            # Convert secrets to regular dict (secrets are read-only)
-            config = dict(st.secrets["auth"])
-            # Convert nested sections to regular dicts
-            if "credentials" in config:
-                config["credentials"] = dict(config["credentials"])
-                if "usernames" in config["credentials"]:
-                    config["credentials"]["usernames"] = dict(config["credentials"]["usernames"])
-                    # Convert each user to dict
-                    for username in config["credentials"]["usernames"]:
-                        config["credentials"]["usernames"][username] = dict(config["credentials"]["usernames"][username])
-            if "cookie" in config:
-                config["cookie"] = dict(config["cookie"])
+            # Deep convert all secrets to regular Python objects
+            config = deep_dict_convert(st.secrets["auth"])
         else:
             # Fallback to local auth.yaml file
             cfg_path = "auth.yaml"
