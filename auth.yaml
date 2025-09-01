@@ -1,0 +1,10 @@
+credentials:
+  usernames:
+    you:
+      email: tijmenmolder@gmail.com
+      name: You
+      password: TestPassword123  # Will be auto-hashed on first run
+cookie:
+  name: workout_auth
+  key: some_random_key_12345  # Change this to a secure random string
+  expiry_days: 30
