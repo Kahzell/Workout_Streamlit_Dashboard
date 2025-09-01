@@ -62,16 +62,22 @@ def authenticate():
         st.error(f"Auth dependencies not installed: {e}")
         st.stop()
     
-    cfg_path = "auth.yaml"
-    if not os.path.exists(cfg_path):
-        st.error("auth.yaml not found. Please create the authentication config file.")
-        st.stop()
-    
+    # Try to load from secrets first, then fall back to local file
+    config = None
     try:
-        with open(cfg_path, "r") as f:
-            config = yaml.safe_load(f)
+        if "auth" in st.secrets:
+            config = st.secrets["auth"]
+        else:
+            # Fallback to local auth.yaml file
+            cfg_path = "auth.yaml"
+            if not os.path.exists(cfg_path):
+                st.error("auth.yaml not found and no auth secrets configured.")
+                st.stop()
+            
+            with open(cfg_path, "r") as f:
+                config = yaml.safe_load(f)
     except Exception as e:
-        st.error(f"Failed to load auth.yaml: {e}")
+        st.error(f"Failed to load authentication config: {e}")
         st.stop()
     
     authenticator = stauth.Authenticate(
@@ -574,12 +580,22 @@ def get_workout_insights(workout_rows):
 # ---------- GitHub CSV helpers (optional) ----------
 
 def github_env():
-    token = os.environ.get("GITHUB_TOKEN")
-    repo = os.environ.get("GITHUB_REPO")  # e.g. "username/reponame"
-    branch = os.environ.get("GITHUB_BRANCH", "main")
-    path_strength = os.environ.get("GITHUB_FILEPATH_STRENGTH", "data/workouts.csv")
-    path_cardio = os.environ.get("GITHUB_FILEPATH_CARDIO", "data/cardio.csv")
-    return token, repo, branch, path_strength, path_cardio
+    try:
+        # Use Streamlit secrets for cloud deployment, fallback to env vars for local dev
+        token = st.secrets.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
+        branch = st.secrets.get("GITHUB_BRANCH", "main") or os.environ.get("GITHUB_BRANCH", "main")
+        path_strength = st.secrets.get("GITHUB_FILEPATH_STRENGTH", "data/workouts.csv") or os.environ.get("GITHUB_FILEPATH_STRENGTH", "data/workouts.csv")
+        path_cardio = st.secrets.get("GITHUB_FILEPATH_CARDIO", "data/cardio.csv") or os.environ.get("GITHUB_FILEPATH_CARDIO", "data/cardio.csv")
+        return token, repo, branch, path_strength, path_cardio
+    except Exception:
+        # Fallback to environment variables only
+        token = os.environ.get("GITHUB_TOKEN")
+        repo = os.environ.get("GITHUB_REPO")
+        branch = os.environ.get("GITHUB_BRANCH", "main")
+        path_strength = os.environ.get("GITHUB_FILEPATH_STRENGTH", "data/workouts.csv")
+        path_cardio = os.environ.get("GITHUB_FILEPATH_CARDIO", "data/cardio.csv")
+        return token, repo, branch, path_strength, path_cardio
 
 
 def github_get_file(token: str, repo: str, path: str, ref: str):

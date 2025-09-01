@@ -5,3 +5,6 @@ __pycache__/
 venv/
 .env
 auth.yaml
+setup_github.py
+DEPLOYMENT_GUIDE.md
+secrets.toml
