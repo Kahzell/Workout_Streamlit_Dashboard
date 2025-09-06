@@ -563,11 +563,23 @@ def load_workout_history() -> pd.DataFrame:
             # Ensure variant column exists
             if 'variant' not in combined_df.columns:
                 combined_df['variant'] = ""
+            
+            # Debug: Show available columns
+            if combined_df.empty:
+                st.warning("⚠️ Workout history loaded but contains no data")
+            else:
+                st.sidebar.info(f"📊 Loaded {len(combined_df)} workout entries")
+                # Show columns for debugging
+                if st.sidebar.checkbox("Show data columns (debug)", value=False):
+                    st.sidebar.write("Available columns:", list(combined_df.columns))
+                    
             return combined_df
         else:
             return pd.DataFrame()
     except Exception as e:
         st.error(f"Error loading workout history: {e}")
+        # Also show in sidebar for debugging
+        st.sidebar.error(f"Workout history load failed: {str(e)[:50]}...")
         return pd.DataFrame()
 
 
@@ -1072,12 +1084,18 @@ with strength_tab:
         
         # Get available previous workouts
         if not df_history.empty:
-            # Ensure workout_date is datetime
-            df_history['workout_date'] = pd.to_datetime(df_history['workout_date'], errors='coerce')
-            
-            # Get unique workout dates (last 5)
-            unique_dates = df_history['workout_date'].dropna().dt.date.unique()
-            unique_dates = sorted(unique_dates, reverse=True)[:5]  # Last 5 workouts
+            # Check if required columns exist
+            if 'workout_date' not in df_history.columns:
+                st.warning("⚠️ Workout history data missing 'workout_date' column")
+                st.info("Available columns: " + ", ".join(df_history.columns.tolist()))
+                unique_dates = []  # No dates available
+            else:
+                # Ensure workout_date is datetime
+                df_history['workout_date'] = pd.to_datetime(df_history['workout_date'], errors='coerce')
+                
+                # Get unique workout dates (last 5)
+                unique_dates = df_history['workout_date'].dropna().dt.date.unique()
+                unique_dates = sorted(unique_dates, reverse=True)[:5]  # Last 5 workouts
             
             if unique_dates:
                 # Convert dates to strings for selectbox
@@ -1092,9 +1110,15 @@ with strength_tab:
                 # Show preview of selected workout
                 selected_date = pd.to_datetime(selected_date_str).date()
                 selected_workout = df_history[df_history['workout_date'].dt.date == selected_date]
-                exercise_count = selected_workout['exercise'].nunique()
-                set_count = len(selected_workout)
-                st.caption(f"*{exercise_count} exercises, {set_count} sets*")
+                
+                # Safely count exercises and sets
+                if 'exercise' in selected_workout.columns:
+                    exercise_count = selected_workout['exercise'].nunique()
+                    set_count = len(selected_workout)
+                    st.caption(f"*{exercise_count} exercises, {set_count} sets*")
+                else:
+                    set_count = len(selected_workout)
+                    st.caption(f"*{set_count} entries*")
                 
                 if st.button("📋 Load Selected Workout", help="Load the selected workout into current session"):
                     selected_workout_data = df_history[df_history['workout_date'].dt.date == selected_date].copy()
