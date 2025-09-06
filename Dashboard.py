@@ -33,6 +33,8 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
+import time
+import yaml
 from dateutil import tz
 
 # Load environment variables from .env file
@@ -42,21 +44,83 @@ try:
 except ImportError:
     pass  # dotenv not installed, skip loading
 
+# ----------------- Session State Persistence -----------------
+def save_session_state():
+    """Save critical session state to browser's session storage via query params"""
+    # Don't save if user just cleared everything intentionally
+    if st.session_state.get('_intentionally_cleared', False):
+        return
+        
+    # Save workout data to session state with a special key that persists across auth
+    if 'workout_rows' in st.session_state and st.session_state['workout_rows']:
+        st.session_state['_saved_workout_rows'] = st.session_state['workout_rows']
+    if 'cardio_rows' in st.session_state and st.session_state['cardio_rows']:
+        st.session_state['_saved_cardio_rows'] = st.session_state['cardio_rows']
+    
+    # Save form values
+    persistent_keys = [
+        'strength_date', 'strength_session', 'strength_notes',
+        'cardio_date', 'cardio_notes',
+        'superset_counter', 'dropset_counter'
+    ]
+    
+    for key in persistent_keys:
+        if key in st.session_state:
+            st.session_state[f'_saved_{key}'] = st.session_state[key]
+
+def restore_session_state():
+    """Restore session state after authentication"""
+    # Don't restore if user intentionally cleared data
+    if st.session_state.get('_intentionally_cleared', False):
+        return
+    
+    # Restore workout data only if current data is empty
+    if '_saved_workout_rows' in st.session_state and not st.session_state.get('workout_rows', []):
+        st.session_state['workout_rows'] = st.session_state['_saved_workout_rows']
+        # Show notification that data was restored
+        st.toast("🔄 Restored your workout progress!", icon="✅")
+    
+    if '_saved_cardio_rows' in st.session_state and not st.session_state.get('cardio_rows', []):
+        st.session_state['cardio_rows'] = st.session_state['_saved_cardio_rows']
+    
+    # Restore form values
+    persistent_keys = [
+        'strength_date', 'strength_session', 'strength_notes',
+        'cardio_date', 'cardio_notes',
+        'superset_counter', 'dropset_counter'
+    ]
+    
+    for key in persistent_keys:
+        saved_key = f'_saved_{key}'
+        if saved_key in st.session_state and key not in st.session_state:
+            st.session_state[key] = st.session_state[saved_key]
+
+def clear_saved_session_state():
+    """Clear saved session state after successful save"""
+    keys_to_clear = [key for key in st.session_state.keys() if key.startswith('_saved_')]
+    for key in keys_to_clear:
+        del st.session_state[key]
+    # Clear the intentional clear flag as well
+    if '_intentionally_cleared' in st.session_state:
+        del st.session_state['_intentionally_cleared']
+
 # ----------------- Config -----------------
 DATA_DIR = "data"
 EXERCISES_XLSX = os.path.join(DATA_DIR, "exercises.xlsx")
 WORKOUTS_CSV = os.path.join(DATA_DIR, "workouts.csv")
 CARDIO_CSV = os.path.join(DATA_DIR, "cardio.csv")
 
-DEFAULT_CARDIO = ["Running", "Cycling", "Swimming", "Jump Rope"]
+DEFAULT_CARDIO = ["Running", "Cycling", "Swimming", "Jump Rope", "Stairmaster", "Rowing", "Elliptical", "Walking", "Hiking", "Other"]
 
 # Page config
 st.set_page_config(page_title="Workout Tracker", page_icon="💪", layout="wide")
 
 # ----------------- Mandatory Auth -----------------
 def authenticate():
+    # Save current session state before authentication check
+    save_session_state()
+    
     try:
-        import yaml
         import streamlit_authenticator as stauth
     except ImportError as e:
         st.error(f"Auth dependencies not installed: {e}")
@@ -120,6 +184,9 @@ def authenticate():
         with st.sidebar:
             st.write(f'Welcome *{st.session_state["name"]}*')
             authenticator.logout('Logout', 'sidebar')
+        
+        # Restore session state after successful authentication
+        restore_session_state()
         return True
     elif st.session_state.get("authentication_status") is False:
         st.error('Username/password is incorrect')
@@ -239,7 +306,7 @@ def create_notes_input(key_prefix: str, placeholder: str = "Notes (optional)") -
     with col2:
         quick_note = st.selectbox(
             "Quick notes", 
-            ["None", "Rehab", "Deload", "Other gym"], 
+            ["Standard", "Rehab", "Deload", "Other gym"], 
             key=f"{key_prefix}_quick"
         )
     
@@ -308,6 +375,95 @@ def create_exercise_variant_inputs(df_ex: pd.DataFrame, key_prefix: str = ""):
             st.selectbox("Variant (optional)", options=[""], disabled=True, key=empty_key)
     
     return exercise, variant
+
+
+def create_weight_input(variant: str, key_prefix: str = ""):
+    """Create weight input that adapts based on variant (bands vs numerical)"""
+    is_bands = variant.lower() == "bands"
+    
+    if is_bands:
+        # Band resistance system
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            resistance_level = st.selectbox(
+                "Resistance Level",
+                options=["Ultra-Light", "Light", "Medium", "Heavy", "Ultra-Heavy"],
+                index=2,  # Default to Medium
+                key=f"{key_prefix}_resistance" if key_prefix else "resistance"
+            )
+        
+        with col2:
+            add_bodyweight = st.checkbox(
+                "Add bodyweight",
+                key=f"{key_prefix}_add_bw" if key_prefix else "add_bw"
+            )
+        
+        with col3:
+            additional_weight = st.number_input(
+                "Additional weight",
+                min_value=0.0,
+                step=0.5,
+                format="%.2f",
+                value=0.0,
+                help="Extra weight added (plates, dumbbells, etc.)",
+                key=f"{key_prefix}_add_weight" if key_prefix else "add_weight"
+            )
+        
+        # Create weight description and numeric value
+        weight_description = resistance_level
+        if add_bodyweight:
+            weight_description += " + BW"
+        if additional_weight > 0:
+            weight_description += f" + {additional_weight}kg"
+        
+        return {
+            "weight": additional_weight,  # Numeric component for calculations
+            "weight_type": "Bands",
+            "resistance_level": resistance_level,
+            "add_bodyweight": add_bodyweight,
+            "weight_description": weight_description
+        }
+    else:
+        # Standard numerical weight
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            weight = st.number_input(
+                "Weight", 
+                min_value=0.0, 
+                step=0.5, 
+                format="%.2f",
+                key=f"{key_prefix}_weight" if key_prefix else "weight"
+            )
+        
+        with col2:
+            weight_unit = st.radio(
+                "Unit", 
+                options=["kg", "lb"], 
+                horizontal=True,
+                key=f"{key_prefix}_weight_unit" if key_prefix else "weight_unit"
+            )
+        
+        with col3:
+            add_bodyweight = st.checkbox(
+                "Add bodyweight",
+                key=f"{key_prefix}_add_bw" if key_prefix else "add_bw"
+            )
+        
+        # Create weight description
+        weight_description = f"{weight}{weight_unit}"
+        if add_bodyweight:
+            weight_description += " + BW"
+        
+        return {
+            "weight": weight,
+            "weight_type": "Standard",
+            "resistance_level": "",
+            "add_bodyweight": add_bodyweight,
+            "weight_description": weight_description,
+            "weight_unit": weight_unit
+        }
 
 
 def load_workout_history() -> pd.DataFrame:
@@ -495,12 +651,13 @@ def compute_next_set_no(rows: List[Dict], exercise: str) -> int:
 def df_from_rows(rows: List[Dict], kind: str) -> pd.DataFrame:
     if kind == "strength":
         cols = [
-            "workout_date","exercise","variant","set_no","weight","weight_unit","reps","rpe","pain","set_type",
+            "workout_date","exercise","variant","set_no","weight","weight_unit","weight_type",
+            "resistance_level","add_bodyweight","weight_description","reps","rpe","pain","set_type",
             "superset_group","superset_part","dropset_group","drop_no","timestamp","notes"
         ]
     else:
         cols = [
-            "workout_date","activity","duration_min","distance_km","rpe","pain","timestamp","notes"
+            "workout_date","activity","duration_min","distance_km","rpe","pain","heat_training","heat_duration_min","timestamp","notes"
         ]
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -509,7 +666,14 @@ def df_from_rows(rows: List[Dict], kind: str) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     for col in cols:
         if col not in df.columns:
-            df[col] = "" if col in ["variant", "notes", "superset_group", "superset_part", "dropset_group"] else (0 if col in ["weight", "reps", "rpe", "pain", "set_no", "drop_no"] else "")
+            if col in ["variant", "notes", "superset_group", "superset_part", "dropset_group", "weight_unit", "weight_type", "resistance_level", "weight_description"]:
+                df[col] = ""
+            elif col in ["weight", "reps", "rpe", "pain", "set_no", "drop_no", "heat_duration_min"]:
+                df[col] = 0
+            elif col in ["add_bodyweight", "heat_training"]:
+                df[col] = False
+            else:
+                df[col] = ""
     
     return df[cols]
 
@@ -694,6 +858,33 @@ def save_csv_github_append(df_new: pd.DataFrame, which: str):
     github_put_file(token, repo, path, b64, message="Append data", branch=branch, sha=meta.get("sha"))
     return True, f"Appended to {path} in {repo}@{branch}"
 
+
+def save_csv_github_replace(df_new: pd.DataFrame, which: str):
+    """Replace the entire CSV file on GitHub with new data"""
+    token, repo, branch, path_strength, path_cardio = github_env()
+    if which == "strength":
+        path = path_strength
+    else:
+        path = path_cardio
+    if not (token and repo and path and branch):
+        return False, "GitHub env vars not fully set; skipped GitHub save."
+
+    # Convert dataframe to CSV
+    csv_buf = io.StringIO()
+    df_new.to_csv(csv_buf, index=False)
+    b64 = base64.b64encode(csv_buf.getvalue().encode("utf-8")).decode("utf-8")
+    
+    # Check if file exists to get SHA for update
+    meta = github_get_file(token, repo, path, ref=branch)
+    if meta is None:
+        # File doesn't exist, create it
+        github_put_file(token, repo, path, b64, message=f"Create {os.path.basename(path)}", branch=branch)
+        return True, f"Created {path} in {repo}@{branch}"
+    else:
+        # File exists, replace it
+        github_put_file(token, repo, path, b64, message="Replace data file", branch=branch, sha=meta.get("sha"))
+        return True, f"Replaced {path} in {repo}@{branch}"
+
 # ----------------- Sidebar: data & settings -----------------
 st.title("💪 Workout Tracker")
 
@@ -719,9 +910,52 @@ with st.sidebar:
                 st.dataframe(exercises_with_variants[["exercise", "variation"]])
         else:
             st.warning("⚠️ No exercises found with variants")
+    
+    # Progress preservation section
+    st.divider()
+    st.subheader("💾 Progress Protection")
+    
+    # Show current progress status
+    workout_count = len(st.session_state.get('workout_rows', []))
+    cardio_count = len(st.session_state.get('cardio_rows', []))
+    saved_workout_count = len(st.session_state.get('_saved_workout_rows', []))
+    saved_cardio_count = len(st.session_state.get('_saved_cardio_rows', []))
+    
+    if workout_count > 0 or cardio_count > 0:
+        st.info(f"📝 Current: {workout_count} strength, {cardio_count} cardio entries")
+    
+    if saved_workout_count > 0 or saved_cardio_count > 0:
+        st.success(f"🛡️ Protected: {saved_workout_count} strength, {saved_cardio_count} cardio entries")
+    
+    if workout_count == 0 and cardio_count == 0 and saved_workout_count == 0 and saved_cardio_count == 0:
+        st.caption("No entries to protect yet")
+    
+    # Show auto-save status
+    if st.session_state.get('_intentionally_cleared', False):
+        st.warning("⚠️ Auto-save disabled (you cleared data)")
+    else:
+        st.info("✅ Auto-save active")
+    
+    # Manual save progress button
+    if st.button("🛡️ Save Progress", help="Manually save your current progress to protect against logouts"):
+        save_session_state()
+        st.success("Progress saved! Your data is now protected.")
+    
+    # Clear saved progress button (for debugging/cleanup)
+    if saved_workout_count > 0 or saved_cardio_count > 0:
+        if st.button("🗑️ Clear Protected Data", help="Clear saved progress data"):
+            clear_saved_session_state()
+            st.session_state['_intentionally_cleared'] = True  # Prevent immediate restoration
+            st.success("Protected data cleared.")
+    
+    # Resume auto-save button if it was disabled
+    if st.session_state.get('_intentionally_cleared', False):
+        if st.button("🔄 Resume Auto-Save", help="Resume automatic progress protection"):
+            del st.session_state['_intentionally_cleared']
+            st.success("Auto-save resumed! Your progress will be protected again.")
 
 # ----------------- Tabs -----------------
-strength_tab, cardio_tab, analytics_tab = st.tabs(["🏋️ Strength", "🏃 Cardio", "📈 Analytics"])
+strength_tab, cardio_tab, analytics_tab, data_tab = st.tabs(["🏋️ Strength", "🏃 Cardio", "📈 Analytics", "📊 Data Manager"])
 
 # ===== Strength tab =====
 with strength_tab:
@@ -737,6 +971,89 @@ with strength_tab:
     with c3:
         notes_global = st.text_input("Session notes (optional)", key="strength_notes")
 
+    # Stopwatch section
+    st.markdown("---")
+    st.subheader("⏱️ Rest Timer")
+    
+    # Initialize stopwatch state
+    if "stopwatch_start_time" not in st.session_state:
+        st.session_state.stopwatch_start_time = None
+    if "stopwatch_elapsed" not in st.session_state:
+        st.session_state.stopwatch_elapsed = 0.0
+    if "stopwatch_running" not in st.session_state:
+        st.session_state.stopwatch_running = False
+    
+    # Stopwatch display and controls
+    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
+    
+    with col1:
+        # Calculate current elapsed time
+        if st.session_state.stopwatch_running and st.session_state.stopwatch_start_time:
+            current_time = time.time()
+            total_elapsed = st.session_state.stopwatch_elapsed + (current_time - st.session_state.stopwatch_start_time)
+        else:
+            total_elapsed = st.session_state.stopwatch_elapsed
+        
+        # Format time display
+        minutes = int(total_elapsed // 60)
+        seconds = int(total_elapsed % 60)
+        time_display = f"{minutes:02d}:{seconds:02d}"
+        
+        # Display timer with large font
+        st.markdown(f"### ⏱️ {time_display}")
+    
+    with col2:
+        if st.button("▶️ Start", disabled=st.session_state.stopwatch_running, use_container_width=True):
+            st.session_state.stopwatch_running = True
+            st.session_state.stopwatch_start_time = time.time()
+            st.rerun()
+    
+    with col3:
+        if st.button("⏸️ Pause", disabled=not st.session_state.stopwatch_running, use_container_width=True):
+            if st.session_state.stopwatch_start_time:
+                current_time = time.time()
+                st.session_state.stopwatch_elapsed += (current_time - st.session_state.stopwatch_start_time)
+            st.session_state.stopwatch_running = False
+            st.session_state.stopwatch_start_time = None
+            st.rerun()
+    
+    with col4:
+        if st.button("🔄 Reset", use_container_width=True):
+            st.session_state.stopwatch_running = False
+            st.session_state.stopwatch_start_time = None
+            st.session_state.stopwatch_elapsed = 0.0
+            st.rerun()
+    
+    with col5:
+        # Quick preset buttons
+        preset_time = st.selectbox("Quick start", ["Manual", "1:00", "1:30", "2:00", "3:00", "5:00"], key="timer_preset")
+        if preset_time != "Manual" and st.button("⚡ Quick", use_container_width=True):
+            # Parse preset time and set as elapsed time
+            minutes, seconds = map(int, preset_time.split(":"))
+            target_seconds = minutes * 60 + seconds
+            st.session_state.stopwatch_elapsed = target_seconds
+            st.session_state.stopwatch_running = True
+            st.session_state.stopwatch_start_time = time.time()
+            st.rerun()
+    
+    # Auto-refresh indicator when running
+    if st.session_state.stopwatch_running:
+        # Create a placeholder for dynamic updates
+        placeholder = st.empty()
+        with placeholder.container():
+            st.info("⏱️ Timer is running... (refresh page to see current time)")
+    
+    # Rest period suggestions
+    if total_elapsed > 0:
+        if total_elapsed >= 180:  # 3 minutes
+            st.success("✅ Good rest for heavy compounds (3+ minutes)")
+        elif total_elapsed >= 120:  # 2 minutes  
+            st.info("👍 Adequate rest for moderate intensity (2+ minutes)")
+        elif total_elapsed >= 60:  # 1 minute
+            st.warning("⚡ Short rest - good for accessories (1+ minute)")
+    
+    st.markdown("---")
+
     # Add exercise history search
     df_history = load_workout_history()
     if not df_history.empty:
@@ -745,20 +1062,59 @@ with strength_tab:
     st.subheader("Add set(s)")
     
     # Set type selection at the top
-    set_type = st.radio("Set Type", ["Normal Sets", "Superset", "Dropset"], horizontal=True, key="set_type_selection")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        set_type = st.radio("Set Type", ["Normal Sets", "Superset", "Dropset"], horizontal=True, key="set_type_selection")
+    with col2:
+        if st.button("📝 Clear Notes", help="Clear all notes fields and reset quick notes to 'Standard'"):
+            # Clear only notes-related fields - use a more comprehensive approach
+            notes_keys_to_clear = []
+            
+            # Get all keys that contain notes
+            for key in st.session_state.keys():
+                if ('_notes_' in key or key.endswith('_notes')) and not key.startswith('_saved_'):
+                    notes_keys_to_clear.append(key)
+            
+            # Clear found keys and reset quick notes to "Standard"
+            for key in notes_keys_to_clear:
+                if key.endswith("_quick"):
+                    st.session_state[key] = "Standard"
+                elif key.endswith("_custom"):
+                    st.session_state[key] = ""
+                else:
+                    if key in st.session_state:
+                        del st.session_state[key]
+            
+            # Also clear any specific known keys that might not match the pattern
+            specific_keys = [
+                "normal_notes_quick", "normal_notes_custom",
+                "dropset_notes_quick", "dropset_notes_custom", 
+                "cardio_notes_quick", "cardio_notes_custom"
+            ]
+            
+            for key in specific_keys:
+                if key.endswith("_quick"):
+                    st.session_state[key] = "Standard"
+                elif key.endswith("_custom"):
+                    st.session_state[key] = ""
+            
+            # Add superset notes clearing
+            for i in range(4):
+                st.session_state[f"ss_notes_{i}_quick"] = "Standard"
+                st.session_state[f"ss_notes_{i}_custom"] = ""
+            
+            st.success("Notes cleared and quick notes set to 'Standard'!")
+            st.rerun()
     
     if set_type == "Normal Sets":
         # Exercise selection outside form for dynamic updates
-        cc1, cc2 = st.columns([2,1])
-        with cc1:
-            exercise, variant = create_exercise_variant_inputs(df_ex, "normal")
-        with cc2:
-            weight_unit = st.radio("Unit", options=["kg","lb"], horizontal=True, key="normal_weight_unit")
+        exercise, variant = create_exercise_variant_inputs(df_ex, "normal")
         
         with st.form("add_normal_sets_form", clear_on_submit=False):
-            c4, c5, c6, c7 = st.columns(4)
-            with c4:
-                weight = st.number_input("Weight", min_value=0.0, step=0.5, format="%.2f")
+            # Dynamic weight input based on variant
+            weight_info = create_weight_input(variant, "normal")
+            
+            c5, c6, c7 = st.columns(3)
             with c5:
                 reps = st.number_input("Reps", min_value=1, step=1, value=8)
             with c6:
@@ -776,21 +1132,26 @@ with strength_tab:
             
             if submitted:
                 if not df_ex.empty and exercise:
-                    if weight <= 0:
-                        st.error("Weight must be greater than 0")
+                    # For bands, weight can be 0; for standard weights, must be > 0
+                    if weight_info["weight_type"] == "Standard" and weight_info["weight"] <= 0:
+                        st.error("Weight must be greater than 0 for standard weights")
                     elif reps <= 0:
                         st.error("Reps must be greater than 0")
                     else:
                         rows = st.session_state["workout_rows"]
                         for i in range(int(sets_to_add)):
                             set_no = compute_next_set_no(rows, exercise)
-                            rows.append({
+                            row_data = {
                                 "workout_date": workout_date.isoformat(),
                                 "exercise": exercise,
                                 "variant": variant.strip() if variant else "",
                                 "set_no": set_no,
-                                "weight": float(weight),
-                                "weight_unit": weight_unit,
+                                "weight": float(weight_info["weight"]),
+                                "weight_unit": weight_info.get("weight_unit", "kg"),
+                                "weight_type": weight_info["weight_type"],
+                                "resistance_level": weight_info["resistance_level"],
+                                "add_bodyweight": weight_info["add_bodyweight"],
+                                "weight_description": weight_info["weight_description"],
                                 "reps": int(reps),
                                 "rpe": float(rpe),
                                 "pain": float(pain),
@@ -801,8 +1162,10 @@ with strength_tab:
                                 "drop_no": None,
                                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                                 "notes": notes.strip(),
-                            })
+                            }
+                            rows.append(row_data)
                         st.success(f"Added {int(sets_to_add)} set(s) of {exercise}.")
+                        save_session_state()  # Auto-save progress after adding sets
                 else:
                     st.warning("Please select an exercise and ensure exercises file is loaded.")
 
@@ -820,31 +1183,30 @@ with strength_tab:
             
             for i in range(num_exercises):
                 st.markdown(f"**Exercise {i+1}:**")
-                col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 1, 1, 1])
                 
-                with col1:
-                    ex, ex_variant = create_exercise_variant_inputs(df_ex, key_prefix=f"ss_{i}")
-                with col2:
-                    w = st.number_input(f"Weight", min_value=0.0, step=0.5, format="%.2f", key=f"ss_weight_{i}")
+                # Exercise selection
+                ex, ex_variant = create_exercise_variant_inputs(df_ex, key_prefix=f"ss_{i}")
+                
+                # Dynamic weight input based on variant
+                weight_info = create_weight_input(ex_variant, f"ss_{i}")
+                
+                col3, col4, col5 = st.columns([1, 1, 1])
                 with col3:
                     r = st.number_input(f"Reps", min_value=1, step=1, value=8, key=f"ss_reps_{i}")
                 with col4:
                     rpe_val = st.number_input(f"RPE", min_value=1.0, max_value=10.0, step=0.5, value=8.5, format="%.1f", key=f"ss_rpe_{i}")
                 with col5:
                     pain_val = st.number_input(f"Pain", min_value=0.0, max_value=10.0, step=0.5, value=0.0, format="%.1f", key=f"ss_pain_{i}")
-                with col6:
-                    unit = st.radio(f"Unit", options=["kg","lb"], horizontal=True, key=f"ss_unit_{i}")
                 
                 notes_ex = create_notes_input(f"ss_notes_{i}", f"Notes for {ex if ex else 'Exercise'} (optional)")
                 
                 superset_exercises.append({
                     "exercise": ex,
                     "variant": ex_variant.strip() if ex_variant else "",
-                    "weight": w,
+                    "weight_info": weight_info,
                     "reps": r,
                     "rpe": rpe_val,
                     "pain": pain_val,
-                    "unit": unit,
                     "notes": notes_ex
                 })
             
@@ -854,11 +1216,16 @@ with strength_tab:
             
             if submitted_ss:
                 if not df_ex.empty and all(ex["exercise"] for ex in superset_exercises):
-                    # Validate all exercises have positive weight and reps
+                    # Validate all exercises - for bands, weight can be 0; for standard weights, must be > 0
                     valid = True
                     for ex in superset_exercises:
-                        if ex["weight"] <= 0 or ex["reps"] <= 0:
-                            st.error(f"All exercises must have weight > 0 and reps > 0")
+                        weight_info = ex["weight_info"]
+                        if weight_info["weight_type"] == "Standard" and weight_info["weight"] <= 0:
+                            st.error(f"Standard weights must be > 0 for all exercises")
+                            valid = False
+                            break
+                        elif ex["reps"] <= 0:
+                            st.error(f"All exercises must have reps > 0")
                             valid = False
                             break
                     
@@ -872,13 +1239,18 @@ with strength_tab:
                         for round_num in range(rounds):
                             for idx, ex in enumerate(superset_exercises):
                                 set_no = compute_next_set_no(rows, ex["exercise"])
+                                weight_info = ex["weight_info"]
                                 rows.append({
                                     "workout_date": workout_date.isoformat(),
                                     "exercise": ex["exercise"],
                                     "variant": ex["variant"],
                                     "set_no": set_no,
-                                    "weight": float(ex["weight"]),
-                                    "weight_unit": ex["unit"],
+                                    "weight": float(weight_info["weight"]),
+                                    "weight_unit": weight_info.get("weight_unit", "kg"),
+                                    "weight_type": weight_info["weight_type"],
+                                    "resistance_level": weight_info["resistance_level"],
+                                    "add_bodyweight": weight_info["add_bodyweight"],
+                                    "weight_description": weight_info["weight_description"],
                                     "reps": int(ex["reps"]),
                                     "rpe": float(ex["rpe"]),
                                     "pain": float(ex["pain"]),
@@ -892,16 +1264,16 @@ with strength_tab:
                                 })
                         
                         st.success(f"Added superset '{superset_group}' with {rounds} round(s) and {len(superset_exercises)} exercises.")
+                        save_session_state()  # Auto-save progress after adding superset
                 else:
                     st.warning("Please select all exercises and ensure exercises file is loaded.")
 
     elif set_type == "Dropset":
         # Exercise selection outside form for dynamic updates
-        st.markdown("**Configure Dropset** (Same exercise with decreasing weight)")
+        st.markdown("**Configure Dropset** (Same exercise with decreasing weight/resistance)")
         
         # Exercise selection
         exercise, variant = create_exercise_variant_inputs(df_ex, "dropset")
-        weight_unit = st.radio("Unit", options=["kg","lb"], horizontal=True, key="dropset_weight_unit")
         
         with st.form("add_dropset_form", clear_on_submit=False):
             # Dropset group name
@@ -913,25 +1285,88 @@ with strength_tab:
             st.markdown("**Configure each drop:**")
             
             dropset_drops = []
+            is_bands = variant.lower() == "bands"
             
             for i in range(num_drops):
-                col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+                st.markdown(f"**Drop {i+1}:**")
                 
-                with col1:
-                    w = st.number_input(f"Drop {i+1} Weight", min_value=0.0, step=0.5, format="%.2f", key=f"ds_weight_{i}")
-                with col2:
-                    r = st.number_input(f"Drop {i+1} Reps", min_value=1, step=1, value=max(8-i, 3), key=f"ds_reps_{i}")
-                with col3:
-                    rpe_val = st.number_input(f"Drop {i+1} RPE", min_value=1.0, max_value=10.0, step=0.5, value=8.5+i*0.5, format="%.1f", key=f"ds_rpe_{i}")
-                with col4:
-                    pain_val = st.number_input(f"Drop {i+1} Pain", min_value=0.0, max_value=10.0, step=0.5, value=0.0, format="%.1f", key=f"ds_pain_{i}")
-                
-                dropset_drops.append({
-                    "weight": w,
-                    "reps": r,
-                    "rpe": rpe_val,
-                    "pain": pain_val
-                })
+                if is_bands:
+                    # Band resistance system for dropsets
+                    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
+                    
+                    with col1:
+                        resistance_levels = ["Ultra-Light", "Light", "Medium", "Heavy", "Ultra-Heavy"]
+                        # Default to decreasing resistance
+                        default_idx = max(0, min(len(resistance_levels)-1, 4-i))
+                        resistance_level = st.selectbox(
+                            f"Resistance Level",
+                            options=resistance_levels,
+                            index=default_idx,
+                            key=f"ds_resistance_{i}"
+                        )
+                    
+                    with col2:
+                        add_bw = st.checkbox(f"+ BW", key=f"ds_bw_{i}")
+                    
+                    with col3:
+                        add_weight = st.number_input(f"+ Weight", min_value=0.0, step=0.5, format="%.2f", value=0.0, key=f"ds_add_weight_{i}")
+                    
+                    with col4:
+                        r = st.number_input(f"Reps", min_value=1, step=1, value=max(8-i, 3), key=f"ds_reps_{i}")
+                    
+                    with col5:
+                        rpe_val = st.number_input(f"RPE", min_value=1.0, max_value=10.0, step=0.5, value=8.5+i*0.5, format="%.1f", key=f"ds_rpe_{i}")
+                    
+                    pain_val = st.number_input(f"Pain", min_value=0.0, max_value=10.0, step=0.5, value=0.0, format="%.1f", key=f"ds_pain_{i}")
+                    
+                    # Create weight description
+                    weight_desc = resistance_level
+                    if add_bw:
+                        weight_desc += " + BW"
+                    if add_weight > 0:
+                        weight_desc += f" + {add_weight}kg"
+                    
+                    dropset_drops.append({
+                        "weight": add_weight,
+                        "weight_type": "Bands",
+                        "resistance_level": resistance_level,
+                        "add_bodyweight": add_bw,
+                        "weight_description": weight_desc,
+                        "reps": r,
+                        "rpe": rpe_val,
+                        "pain": pain_val
+                    })
+                    
+                else:
+                    # Standard weight dropset
+                    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+                    
+                    with col1:
+                        w = st.number_input(f"Weight", min_value=0.0, step=0.5, format="%.2f", key=f"ds_weight_{i}")
+                    with col2:
+                        add_bw = st.checkbox(f"+ BW", key=f"ds_bw_{i}")
+                    with col3:
+                        r = st.number_input(f"Reps", min_value=1, step=1, value=max(8-i, 3), key=f"ds_reps_{i}")
+                    with col4:
+                        rpe_val = st.number_input(f"RPE", min_value=1.0, max_value=10.0, step=0.5, value=8.5+i*0.5, format="%.1f", key=f"ds_rpe_{i}")
+                    with col5:
+                        pain_val = st.number_input(f"Pain", min_value=0.0, max_value=10.0, step=0.5, value=0.0, format="%.1f", key=f"ds_pain_{i}")
+                    
+                    # Create weight description
+                    weight_desc = f"{w}kg"
+                    if add_bw:
+                        weight_desc += " + BW"
+                    
+                    dropset_drops.append({
+                        "weight": w,
+                        "weight_type": "Standard",
+                        "resistance_level": "",
+                        "add_bodyweight": add_bw,
+                        "weight_description": weight_desc,
+                        "reps": r,
+                        "rpe": rpe_val,
+                        "pain": pain_val
+                    })
             
             # Add rounds option for dropsets
             rounds = st.number_input("Number of dropset rounds", min_value=1, max_value=5, value=1, help="How many times to repeat this dropset sequence")
@@ -942,18 +1377,27 @@ with strength_tab:
             
             if submitted_ds:
                 if not df_ex.empty and exercise:
-                    # Validate all drops have positive weight and reps
+                    # Validate all drops - different logic for bands vs standard weights
                     valid = True
+                    is_bands = variant.lower() == "bands"
+                    
                     for i, drop in enumerate(dropset_drops):
-                        if drop["weight"] <= 0 or drop["reps"] <= 0:
-                            st.error(f"All drops must have weight > 0 and reps > 0")
+                        if drop["reps"] <= 0:
+                            st.error(f"All drops must have reps > 0")
                             valid = False
                             break
-                        # Check that weight decreases
-                        if i > 0 and drop["weight"] >= dropset_drops[i-1]["weight"]:
-                            st.error(f"Weight should decrease with each drop")
-                            valid = False
-                            break
+                        
+                        if not is_bands:
+                            # For standard weights, validate decreasing weight
+                            if drop["weight"] <= 0:
+                                st.error(f"Standard weights must be > 0 for all drops")
+                                valid = False
+                                break
+                            # Check that weight decreases
+                            if i > 0 and drop["weight"] >= dropset_drops[i-1]["weight"]:
+                                st.error(f"Weight should decrease with each drop")
+                                valid = False
+                                break
                     
                     if valid:
                         rows = st.session_state["workout_rows"]
@@ -969,7 +1413,11 @@ with strength_tab:
                                     "variant": variant.strip() if variant else "",
                                     "set_no": set_no,
                                     "weight": float(drop["weight"]),
-                                    "weight_unit": weight_unit,
+                                    "weight_unit": "kg",  # Default unit
+                                    "weight_type": drop["weight_type"],
+                                    "resistance_level": drop["resistance_level"],
+                                    "add_bodyweight": drop["add_bodyweight"],
+                                    "weight_description": drop["weight_description"],
                                     "reps": int(drop["reps"]),
                                     "rpe": float(drop["rpe"]),
                                     "pain": float(drop["pain"]),
@@ -983,6 +1431,7 @@ with strength_tab:
                                 })
                         
                         st.success(f"Added dropset '{dropset_group}' with {rounds} round(s) and {len(dropset_drops)} drops.")
+                        save_session_state()  # Auto-save progress after adding dropset
                 else:
                     st.warning("Please select an exercise and ensure exercises file is loaded.")
 
@@ -998,6 +1447,8 @@ with strength_tab:
     with col2:
         if st.button("🗑️ Clear All Entries"):
             st.session_state["workout_rows"] = []
+            st.session_state['_intentionally_cleared'] = True  # Flag to prevent restoration
+            clear_saved_session_state()  # Clear any saved data too
             st.info("Cleared all workout entries.")
     with col3:
         if st.button("📋 Quick Add Set"):
@@ -1012,6 +1463,7 @@ with strength_tab:
                     new_entry["timestamp"] = datetime.now().isoformat(timespec="seconds")
                     rows.append(new_entry)
                     st.success(f"Quick added set of {last_entry['exercise']}")
+                    save_session_state()  # Auto-save progress after quick add
                 else:
                     st.warning("Quick add only works for normal sets")
             else:
@@ -1044,9 +1496,14 @@ with strength_tab:
         column_config={
             "workout_date": st.column_config.DateColumn("Date"),
             "exercise": st.column_config.TextColumn("Exercise", width="medium"),
+            "variant": st.column_config.TextColumn("Variant", width="small"),
             "set_no": st.column_config.NumberColumn("Set #", step=1, width="small"),
-            "weight": st.column_config.NumberColumn("Weight", step=0.5, width="small"),
+            "weight_description": st.column_config.TextColumn("Weight/Resistance", width="medium", help="Shows weight or band resistance"),
+            "weight": st.column_config.NumberColumn("Weight (num)", step=0.5, width="small", help="Numeric weight value"),
             "weight_unit": st.column_config.SelectboxColumn("Unit", options=["kg", "lb"], width="small"),
+            "weight_type": st.column_config.SelectboxColumn("Type", options=["Standard", "Bands"], width="small"),
+            "resistance_level": st.column_config.TextColumn("Resistance", width="small"),
+            "add_bodyweight": st.column_config.CheckboxColumn("+ BW", width="small"),
             "reps": st.column_config.NumberColumn("Reps", step=1, width="small"),
             "rpe": st.column_config.NumberColumn("RPE", step=0.5, min_value=1.0, max_value=10.0, width="small"),
             "pain": st.column_config.NumberColumn("Pain", step=0.5, min_value=0.0, max_value=10.0, width="small"),
@@ -1060,8 +1517,8 @@ with strength_tab:
         },
         hide_index=True,
         column_order=[
-            "workout_date", "exercise", "set_no", "set_type", "set_identifier",
-            "weight", "weight_unit", "reps", "rpe", "pain", "notes"
+            "workout_date", "exercise", "variant", "set_no", "set_type", "set_identifier",
+            "weight_description", "reps", "rpe", "pain", "notes"
         ]
     )
     
@@ -1073,6 +1530,46 @@ with strength_tab:
             edited = edited.drop("set_identifier", axis=1)
     
     st.session_state["workout_rows"] = edited.to_dict(orient="records")
+    
+    # Add specific entry deletion interface
+    if st.session_state["workout_rows"]:
+        with st.expander("🗑️ Delete Specific Entries"):
+            st.markdown("**Select entries to delete:**")
+            
+            # Create a list of entries with descriptive labels
+            entry_options = []
+            for i, row in enumerate(st.session_state["workout_rows"]):
+                set_type = row.get("set_type", "normal")
+                if set_type == "superset":
+                    label = f"Set {i+1}: {row['exercise']} - {row['superset_group']}-{row['superset_part']} ({row['weight']}{row['weight_unit']} x {row['reps']})"
+                elif set_type == "dropset":
+                    label = f"Set {i+1}: {row['exercise']} - {row['dropset_group']}-Drop{row['drop_no']} ({row['weight']}{row['weight_unit']} x {row['reps']})"
+                else:
+                    label = f"Set {i+1}: {row['exercise']} - Set {row['set_no']} ({row['weight']}{row['weight_unit']} x {row['reps']})"
+                entry_options.append((i, label))
+            
+            # Multi-select for entries to delete
+            entries_to_delete = st.multiselect(
+                "Choose entries to delete:",
+                options=[i for i, _ in entry_options],
+                format_func=lambda x: next(label for i, label in entry_options if i == x),
+                help="Select one or more entries to delete from your workout"
+            )
+            
+            if entries_to_delete:
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if st.button("🗑️ Delete Selected", type="secondary"):
+                        # Sort indices in reverse order to avoid index shifting issues
+                        for idx in sorted(entries_to_delete, reverse=True):
+                            del st.session_state["workout_rows"][idx]
+                        
+                        save_session_state()  # Auto-save after deletion
+                        st.success(f"Deleted {len(entries_to_delete)} entries")
+                        st.rerun()
+                
+                with col2:
+                    st.info(f"Selected {len(entries_to_delete)} entries for deletion")
     
     # Display workout summary
     if st.session_state["workout_rows"]:
@@ -1120,7 +1617,7 @@ with strength_tab:
                     for group, drops in dropsets.items():
                         st.markdown(f"- **{group}**: {' → '.join(drops)}")
     
-    st.caption("💡 Tip: Edit any cell above before saving. Use 'Set ID' column to see superset/dropset groupings.")
+    st.caption("💡 Tip: Edit any cell above before saving. Use 'Set ID' column to see superset/dropset groupings. Use the 'Delete Specific Entries' section below to remove individual sets. For bands, select 'Bands' as variant to access resistance levels. Use 'Add bodyweight' checkbox for bodyweight exercises.")
 
     if st.button("💾 Save workout", type="primary", key="save_strength"):
         if not st.session_state["workout_rows"]:
@@ -1130,7 +1627,8 @@ with strength_tab:
             df_sets["session_name"] = session_name; df_sets["session_notes"] = notes_global
             df_out = merge_with_exercise_meta(df_sets, load_exercises())
             cols_first = [
-                "workout_date","session_name","exercise","variant","set_no","weight","weight_unit","reps","rpe","pain",
+                "workout_date","session_name","exercise","variant","set_no","weight","weight_unit","weight_type",
+                "resistance_level","add_bodyweight","weight_description","reps","rpe","pain",
                 "set_type","superset_group","superset_part","dropset_group","drop_no","timestamp","notes",
                 "session_notes","primary_muscle","secondary_muscle"
             ]
@@ -1144,6 +1642,7 @@ with strength_tab:
                     st.download_button("⬇️ Download this workout as CSV", df_out.to_csv(index=False).encode("utf-8"),
                                        file_name=f"workout_{workout_date.isoformat()}.csv", mime="text/csv")
                     st.session_state["workout_rows"] = []
+                    clear_saved_session_state()  # Clear saved session state after successful save
                     st.toast("Workout saved to GitHub and cleared.")
                 else:
                     st.warning(f"⚠️ {msg}")
@@ -1177,6 +1676,15 @@ with cardio_tab:
             rpe_c = st.number_input("RPE", min_value=1.0, max_value=10.0, step=0.5, value=6.0, format="%.1f")
         with c8:
             pain_c = st.number_input("Pain (0-10)", min_value=0.0, max_value=10.0, step=0.5, value=0.0, format="%.1f")
+        
+        # Heat training section
+        st.markdown("**Heat Training** (optional)")
+        h1, h2 = st.columns([1, 2])
+        with h1:
+            heat_training = st.checkbox("Heat training", value=False)
+        with h2:
+            heat_duration = st.number_input("Heat duration (min)", min_value=0.0, step=1.0, value=0.0, format="%.1f", disabled=not heat_training)
+        
         notes_c = create_notes_input("cardio_notes", "Notes (optional)")
         add_cardio = st.form_submit_button("➕ Add cardio entry")
 
@@ -1194,10 +1702,13 @@ with cardio_tab:
                     "distance_km": float(distance),
                     "rpe": float(rpe_c),
                     "pain": float(pain_c),
+                    "heat_training": heat_training,
+                    "heat_duration_min": float(heat_duration) if heat_training else 0.0,
                     "timestamp": datetime.now().isoformat(timespec="seconds"),
                     "notes": notes_c.strip(),
                 })
                 st.success(f"Added {act} entry.")
+                save_session_state()  # Auto-save progress after adding cardio entry
 
     st.subheader("Current cardio entries")
     df_cardio_cur = df_from_rows(st.session_state["cardio_rows"], kind="cardio")
@@ -1220,6 +1731,7 @@ with cardio_tab:
                     st.download_button("⬇️ Download these cardio entries", df_out.to_csv(index=False).encode("utf-8"),
                                        file_name=f"cardio_{c_date.isoformat()}.csv", mime="text/csv")
                     st.session_state["cardio_rows"] = []
+                    clear_saved_session_state()  # Clear saved session state after successful save
                     st.toast("Cardio saved to GitHub and cleared.")
                 else:
                     st.warning(f"⚠️ {msg}")
@@ -1235,10 +1747,118 @@ with cardio_tab:
 
 # ===== Analytics tab =====
 with analytics_tab:
-    st.subheader("Strength volume by muscle group")
-    metric = st.selectbox("Volume metric", ["Sets","Reps","Tonnage (Weight×Reps)"])
-    week_ending = st.selectbox("Week ends on", ["Mon","Sun"], index=0)
-
+    # Calendar heatmap showing workout activity
+    st.subheader("📅 Workout Activity Calendar")
+    
+    def create_workout_calendar():
+        """Create a calendar heatmap showing workout activity by date"""
+        # Load both strength and cardio data
+        df_strength = load_strength()
+        df_cardio = load_cardio()
+        
+        # Get unique workout dates
+        strength_dates = set()
+        cardio_dates = set()
+        
+        if not df_strength.empty:
+            strength_dates = set(df_strength['workout_date'].dt.date)
+        
+        if not df_cardio.empty:
+            cardio_dates = set(df_cardio['workout_date'].dt.date)
+        
+        # Create date range for the last 12 months
+        end_date = pd.Timestamp.today().date()
+        start_date = end_date - pd.Timedelta(days=365)
+        
+        # Generate all dates in range
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+        
+        # Create calendar data
+        calendar_data = []
+        for date in date_range:
+            date_only = date.date()
+            has_strength = date_only in strength_dates
+            has_cardio = date_only in cardio_dates
+            
+            if has_strength and has_cardio:
+                activity_type = "Both"
+                color = "#8B5CF6"  # Purple
+            elif has_strength:
+                activity_type = "Strength"
+                color = "#EF4444"  # Red
+            elif has_cardio:
+                activity_type = "Cardio"
+                color = "#3B82F6"  # Blue
+            else:
+                activity_type = "None"
+                color = "#F3F4F6"  # Light gray
+            
+            calendar_data.append({
+                'date': date,
+                'activity_type': activity_type,
+                'color': color,
+                'day_of_week': date.day_name(),
+                'week_of_year': date.isocalendar()[1],
+                'day_of_month': date.day,
+                'month': date.strftime('%Y-%m')
+            })
+        
+        df_calendar = pd.DataFrame(calendar_data)
+        
+        if df_calendar.empty:
+            st.info("No workout data available for calendar.")
+            return
+        
+        # Create the heatmap chart
+        base_chart = alt.Chart(df_calendar).mark_rect(
+            stroke='white',
+            strokeWidth=1
+        ).encode(
+            x=alt.X('date(date):O', title='Day', axis=alt.Axis(format='%e', labelAngle=0)),
+            y=alt.Y('day(date):O', title='', axis=alt.Axis(format='%a')),
+            color=alt.Color(
+                'color:N',
+                scale=None,  # Use the exact colors we specify
+                legend=None
+            ),
+            tooltip=[
+                alt.Tooltip('date:T', format='%Y-%m-%d', title='Date'),
+                alt.Tooltip('activity_type:N', title='Activity'),
+                alt.Tooltip('day_of_week:N', title='Day')
+            ]
+        ).properties(
+            width=60,
+            height=120
+        )
+        
+        chart = base_chart.facet(
+            column=alt.Column(
+                'yearmonth(date):O',
+                title='',
+                header=alt.Header(
+                    format='%B %Y',
+                    labelAngle=0,
+                    labelAlign='center'
+                )
+            )
+        ).resolve_scale(
+            x='independent'
+        )
+        
+        st.altair_chart(chart, use_container_width=True)
+        
+        # Add legend
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.markdown("🔴 **Strength only**")
+        with col2:
+            st.markdown("🔵 **Cardio only**")
+        with col3:
+            st.markdown("🟣 **Both activities**")
+        with col4:
+            st.markdown("⚪ **Rest day**")
+    
+    # Helper functions for loading data (defined here for use in calendar)
     def load_strength() -> pd.DataFrame:
         if os.path.exists(WORKOUTS_CSV):
             df = pd.read_csv(WORKOUTS_CSV)
@@ -1280,6 +1900,14 @@ with analytics_tab:
             except Exception as e:
                 st.info(f"Could not load cardio from GitHub: {e}")
             return pd.DataFrame()
+    
+    # Display the calendar
+    create_workout_calendar()
+    
+    st.divider()
+    st.subheader("Strength volume by muscle group")
+    metric = st.selectbox("Volume metric", ["Sets","Reps","Tonnage (Weight×Reps)"])
+    week_ending = st.selectbox("Week ends on", ["Mon","Sun"], index=0)
 
     def week_period(s: pd.Series) -> pd.Series:
         freq = "W-MON" if week_ending == "Mon" else "W-SUN"
@@ -1383,3 +2011,274 @@ with analytics_tab:
         ).properties(height=300)
         st.altair_chart(ch1, use_container_width=True)
         st.altair_chart(ch2, use_container_width=True)
+
+# ===== Data Manager tab =====
+with data_tab:
+    st.subheader("📊 Data File Manager")
+    st.markdown("Investigate, edit, and manage your workout data files.")
+    
+    # File selection
+    data_source = st.selectbox(
+        "Select data source",
+        ["Strength Training Data", "Cardio Data", "Exercise Database"],
+        help="Choose which data file to investigate and edit"
+    )
+    
+    def load_data_for_editing(source_type):
+        """Load data from local files or GitHub for editing"""
+        if source_type == "Strength Training Data":
+            if os.path.exists(WORKOUTS_CSV):
+                return pd.read_csv(WORKOUTS_CSV), "workouts.csv", "strength"
+            else:
+                # Try GitHub
+                try:
+                    token, repo, branch, path_strength, path_cardio = github_env()
+                    if token and repo and path_strength:
+                        meta = github_get_file(token, repo, path_strength, ref=branch)
+                        if meta:
+                            existing_b64 = meta.get("content", "")
+                            existing_bytes = base64.b64decode(existing_b64)
+                            df = pd.read_csv(io.BytesIO(existing_bytes))
+                            return df, "workouts.csv (from GitHub)", "strength"
+                except Exception as e:
+                    st.error(f"Error loading from GitHub: {e}")
+                return pd.DataFrame(), "workouts.csv (not found)", "strength"
+                
+        elif source_type == "Cardio Data":
+            if os.path.exists(CARDIO_CSV):
+                return pd.read_csv(CARDIO_CSV), "cardio.csv", "cardio"
+            else:
+                # Try GitHub
+                try:
+                    token, repo, branch, path_strength, path_cardio = github_env()
+                    if token and repo and path_cardio:
+                        meta = github_get_file(token, repo, path_cardio, ref=branch)
+                        if meta:
+                            existing_b64 = meta.get("content", "")
+                            existing_bytes = base64.b64decode(existing_b64)
+                            df = pd.read_csv(io.BytesIO(existing_bytes))
+                            return df, "cardio.csv (from GitHub)", "cardio"
+                except Exception as e:
+                    st.error(f"Error loading from GitHub: {e}")
+                return pd.DataFrame(), "cardio.csv (not found)", "cardio"
+                
+        elif source_type == "Exercise Database":
+            if os.path.exists(EXERCISES_XLSX):
+                return pd.read_excel(EXERCISES_XLSX), "exercises.xlsx", "exercises"
+            else:
+                return pd.DataFrame(), "exercises.xlsx (not found)", "exercises"
+    
+    # Load selected data
+    df_data, filename, data_type = load_data_for_editing(data_source)
+    
+    if df_data.empty:
+        st.warning(f"No data found for {filename}")
+        st.info("Try logging some workouts first, or check your file paths.")
+    else:
+        # Display file info
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("File", filename)
+        with col2:
+            st.metric("Rows", len(df_data))
+        with col3:
+            st.metric("Columns", len(df_data.columns))
+        
+        # Data exploration section
+        st.subheader("🔍 Data Overview")
+        
+        # Show basic statistics
+        if st.checkbox("Show data types and info"):
+            st.markdown("**Data Types:**")
+            info_data = []
+            for col in df_data.columns:
+                dtype = str(df_data[col].dtype)
+                null_count = df_data[col].isnull().sum()
+                info_data.append({
+                    "Column": col,
+                    "Data Type": dtype,
+                    "Non-Null Count": len(df_data) - null_count,
+                    "Null Count": null_count
+                })
+            st.dataframe(pd.DataFrame(info_data), use_container_width=True)
+        
+        # Date range filter for workout data
+        if data_type in ["strength", "cardio"] and "workout_date" in df_data.columns:
+            st.markdown("**📅 Date Range Filter**")
+            df_data["workout_date"] = pd.to_datetime(df_data["workout_date"], errors="coerce")
+            
+            if not df_data["workout_date"].isna().all():
+                min_date = df_data["workout_date"].min().date()
+                max_date = df_data["workout_date"].max().date()
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input("Start date", value=min_date, min_value=min_date, max_value=max_date)
+                with col2:
+                    end_date = st.date_input("End date", value=max_date, min_value=min_date, max_value=max_date)
+                
+                # Filter data by date range
+                mask = (df_data["workout_date"].dt.date >= start_date) & (df_data["workout_date"].dt.date <= end_date)
+                df_filtered = df_data[mask].copy()
+            else:
+                df_filtered = df_data.copy()
+        else:
+            df_filtered = df_data.copy()
+        
+        # Search and filter section
+        st.subheader("🔎 Search & Filter")
+        
+        # Column-based filtering
+        if len(df_filtered.columns) > 0:
+            filter_column = st.selectbox("Filter by column", ["None"] + list(df_filtered.columns))
+            
+            if filter_column != "None":
+                if df_filtered[filter_column].dtype == 'object':
+                    # String column - show unique values
+                    unique_values = df_filtered[filter_column].dropna().unique()
+                    if len(unique_values) > 0:
+                        selected_values = st.multiselect(
+                            f"Select {filter_column} values",
+                            options=sorted(unique_values),
+                            default=[]
+                        )
+                        if selected_values:
+                            df_filtered = df_filtered[df_filtered[filter_column].isin(selected_values)]
+                else:
+                    # Numeric column - show range slider
+                    if not df_filtered[filter_column].isna().all():
+                        min_val = float(df_filtered[filter_column].min())
+                        max_val = float(df_filtered[filter_column].max())
+                        if min_val != max_val:
+                            range_values = st.slider(
+                                f"{filter_column} range",
+                                min_value=min_val,
+                                max_value=max_val,
+                                value=(min_val, max_val)
+                            )
+                            df_filtered = df_filtered[
+                                (df_filtered[filter_column] >= range_values[0]) & 
+                                (df_filtered[filter_column] <= range_values[1])
+                            ]
+        
+        # Text search
+        search_term = st.text_input("🔍 Search in all text columns", placeholder="Enter search term...")
+        if search_term:
+            text_columns = df_filtered.select_dtypes(include=['object']).columns
+            mask = df_filtered[text_columns].astype(str).apply(
+                lambda x: x.str.contains(search_term, case=False, na=False)
+            ).any(axis=1)
+            df_filtered = df_filtered[mask]
+        
+        # Display filtered results count
+        st.info(f"Showing {len(df_filtered)} of {len(df_data)} total rows")
+        
+        # Data editing section
+        st.subheader("✏️ Edit Data")
+        
+        # Data editor
+        edited_df = st.data_editor(
+            df_filtered,
+            use_container_width=True,
+            num_rows="dynamic",  # Allow adding/deleting rows
+            key=f"data_editor_{data_type}"
+        )
+        
+        # Save changes section
+        st.subheader("💾 Save Changes")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Save to local file
+            if st.button("💾 Save to Local File", type="primary"):
+                try:
+                    if data_type == "exercises":
+                        edited_df.to_excel(EXERCISES_XLSX, index=False)
+                        st.success(f"✅ Saved to {EXERCISES_XLSX}")
+                    elif data_type == "strength":
+                        edited_df.to_csv(WORKOUTS_CSV, index=False)
+                        st.success(f"✅ Saved to {WORKOUTS_CSV}")
+                    elif data_type == "cardio":
+                        edited_df.to_csv(CARDIO_CSV, index=False)
+                        st.success(f"✅ Saved to {CARDIO_CSV}")
+                except Exception as e:
+                    st.error(f"❌ Error saving to local file: {e}")
+        
+        with col2:
+            # Save to GitHub
+            if st.button("☁️ Save to GitHub"):
+                try:
+                    if data_type == "strength":
+                        ok, msg = save_csv_github_replace(edited_df, which="strength")
+                        if ok:
+                            st.success(f"✅ {msg}")
+                        else:
+                            st.error(f"❌ {msg}")
+                    elif data_type == "cardio":
+                        ok, msg = save_csv_github_replace(edited_df, which="cardio")
+                        if ok:
+                            st.success(f"✅ {msg}")
+                        else:
+                            st.error(f"❌ {msg}")
+                    else:
+                        st.warning("GitHub save not available for exercise database")
+                except Exception as e:
+                    st.error(f"❌ Error saving to GitHub: {e}")
+        
+        with col3:
+            # Download as file
+            if data_type == "exercises":
+                # For Excel files, we need to create a BytesIO buffer
+                from io import BytesIO
+                buffer = BytesIO()
+                edited_df.to_excel(buffer, index=False)
+                buffer.seek(0)
+                st.download_button(
+                    "⬇️ Download Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"edited_{filename}",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.download_button(
+                    "⬇️ Download CSV",
+                    data=edited_df.to_csv(index=False).encode("utf-8"),
+                    file_name=f"edited_{filename}",
+                    mime="text/csv"
+                )
+        
+        # Data quality checks
+        st.subheader("🔍 Data Quality Checks")
+        
+        # Check for missing values
+        missing_data = edited_df.isnull().sum()
+        if missing_data.sum() > 0:
+            st.warning("⚠️ Missing values detected:")
+            missing_df = pd.DataFrame({
+                "Column": missing_data.index,
+                "Missing Count": missing_data.values,
+                "Missing %": (missing_data.values / len(edited_df) * 100).round(2)
+            })
+            missing_df = missing_df[missing_df["Missing Count"] > 0]
+            st.dataframe(missing_df, use_container_width=True)
+        else:
+            st.success("✅ No missing values found")
+        
+        # Check for duplicates
+        if data_type in ["strength", "cardio"]:
+            key_columns = ["workout_date", "exercise"] if data_type == "strength" else ["workout_date", "activity"]
+            if all(col in edited_df.columns for col in key_columns):
+                duplicates = edited_df.duplicated(subset=key_columns, keep=False)
+                if duplicates.any():
+                    st.warning(f"⚠️ {duplicates.sum()} potential duplicate entries found")
+                    if st.checkbox("Show duplicates"):
+                        st.dataframe(edited_df[duplicates], use_container_width=True)
+                else:
+                    st.success("✅ No duplicates found")
+        
+        # Summary statistics for numeric columns
+        numeric_columns = edited_df.select_dtypes(include=['number']).columns
+        if len(numeric_columns) > 0:
+            st.subheader("📈 Summary Statistics")
+            st.dataframe(edited_df[numeric_columns].describe(), use_container_width=True)
