@@ -19,7 +19,7 @@ Run:
 streamlit run Dashboard.py
 
 Excel schema (data/exercises.xlsx):
-Columns (case-insensitive): exercise, primary_muscle, secondary_muscle
+Columns (case-insensitive): exercise, primary_muscle, secondary_muscle, tertiary_muscle, variant
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
-import time
 import yaml
 from dateutil import tz
 
@@ -59,7 +58,7 @@ def save_session_state():
     
     # Save form values
     persistent_keys = [
-        'strength_date', 'strength_session', 'strength_notes',
+        'strength_date',
         'cardio_date', 'cardio_notes',
         'superset_counter', 'dropset_counter'
     ]
@@ -85,7 +84,7 @@ def restore_session_state():
     
     # Restore form values
     persistent_keys = [
-        'strength_date', 'strength_session', 'strength_notes',
+        'strength_date',
         'cardio_date', 'cardio_notes',
         'superset_counter', 'dropset_counter'
     ]
@@ -223,10 +222,16 @@ def normalize_exercise_df(df: pd.DataFrame) -> pd.DataFrame:
     missing = required - set(df.columns)
     for m in missing:
         df[m] = ""
-    for col in ["exercise", "primary_muscle", "secondary_muscle", "variation"]:
-        df[col] = df[col].astype(str).str.strip()
+    
+    # Add tertiary_muscle if it exists, otherwise create empty column
+    if "tertiary_muscle" not in df.columns:
+        df["tertiary_muscle"] = ""
+        
+    for col in ["exercise", "primary_muscle", "secondary_muscle", "tertiary_muscle", "variation"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
     df = df[df["exercise"] != ""].drop_duplicates(subset=["exercise", "variation"]).sort_values(["exercise", "variation"])
-    return df[["exercise", "primary_muscle", "secondary_muscle", "variation"]]
+    return df[["exercise", "primary_muscle", "secondary_muscle", "tertiary_muscle", "variation"]]
 
 
 @st.cache_data(show_spinner=False)
@@ -237,9 +242,9 @@ def load_exercises(path: str = EXERCISES_XLSX) -> pd.DataFrame:
             return normalize_exercise_df(df)
         except Exception as e:
             st.error(f"Couldn't read {path}: {e}")
-            return pd.DataFrame(columns=["exercise", "primary_muscle", "secondary_muscle", "variation"])
+            return pd.DataFrame(columns=["exercise", "primary_muscle", "secondary_muscle", "tertiary_muscle", "variation"])
     else:
-        return pd.DataFrame(columns=["exercise", "primary_muscle", "secondary_muscle", "variation"])
+        return pd.DataFrame(columns=["exercise", "primary_muscle", "secondary_muscle", "tertiary_muscle", "variation"])
 
 
 def today_local_date() -> date:
@@ -272,16 +277,26 @@ def get_exercise_with_variation(exercise: str, variation: str) -> str:
     return f"{exercise} ({variation})"
 
 
-def create_exercise_selection(df_ex: pd.DataFrame, key: str = None) -> str:
-    """Create exercise selection with variation options"""
+def create_exercise_selection(df_ex: pd.DataFrame, key: str = None, body_part_filter: str = "All") -> str:
+    """Create exercise selection with variation options and body part filtering"""
     if df_ex.empty:
+        return ""
+    
+    # Filter exercises by body part
+    if body_part_filter != "All":
+        df_filtered = filter_exercises_by_body_part(df_ex, body_part_filter)
+    else:
+        df_filtered = df_ex
+    
+    if df_filtered.empty:
+        st.warning(f"No exercises found for {body_part_filter} body part filter")
         return ""
     
     # Create exercise options with variations
     options = []
-    for _, row in df_ex.iterrows():
+    for _, row in df_filtered.iterrows():
         base_exercise = row["exercise"]
-        variations = get_exercise_variations(df_ex, base_exercise)
+        variations = get_exercise_variations(df_filtered, base_exercise)
         
         if variations:
             for var in variations:
@@ -297,6 +312,47 @@ def create_exercise_selection(df_ex: pd.DataFrame, key: str = None) -> str:
         kwargs["key"] = key
     
     return st.selectbox("Exercise", **kwargs)
+
+
+def filter_exercises_by_body_part(df_ex: pd.DataFrame, body_part: str) -> pd.DataFrame:
+    """Filter exercises by body part category"""
+    if body_part == "All":
+        return df_ex
+    
+    # Define muscle groups for each body part
+    body_part_mapping = {
+        "Upper": ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Lats", "Traps", "Front Delts", "Rear Delts", "Side Delts"],
+        "Lower": ["Quads", "Hamstrings", "Glutes", "Calves", "Hip Flexors", "Adductors", "Abductors"],
+        "Push": ["Chest", "Shoulders", "Triceps", "Front Delts", "Side Delts"],
+        "Pull": ["Back", "Biceps", "Lats", "Traps", "Rear Delts"],
+        "Full Body": []  # Will include exercises that target multiple body parts
+    }
+    
+    if body_part not in body_part_mapping:
+        return df_ex
+    
+    if body_part == "Full Body":
+        # Full body includes compound movements that work both upper and lower
+        upper_muscles = body_part_mapping["Upper"]
+        lower_muscles = body_part_mapping["Lower"]
+        
+        # Find exercises that have muscles from both upper and lower body
+        mask = df_ex.apply(lambda row: 
+            any(muscle in upper_muscles for muscle in [row.get("primary_muscle", ""), row.get("secondary_muscle", ""), row.get("tertiary_muscle", "")] if muscle) and
+            any(muscle in lower_muscles for muscle in [row.get("primary_muscle", ""), row.get("secondary_muscle", ""), row.get("tertiary_muscle", "")] if muscle),
+            axis=1
+        )
+        return df_ex[mask]
+    else:
+        target_muscles = body_part_mapping[body_part]
+        
+        # Filter exercises where primary, secondary, or tertiary muscle is in target muscles
+        mask = df_ex.apply(lambda row:
+            any(row.get(muscle_col, "") in target_muscles 
+                for muscle_col in ["primary_muscle", "secondary_muscle", "tertiary_muscle"]),
+            axis=1
+        )
+        return df_ex[mask]
 
 
 def create_notes_input(key_prefix: str, placeholder: str = "Notes (optional)") -> str:
@@ -315,7 +371,7 @@ def create_notes_input(key_prefix: str, placeholder: str = "Notes (optional)") -
     
     # Combine notes
     notes = []
-    if quick_note != "None":
+    if quick_note not in ["Standard", "None"]:  # Don't include "Standard" as it's the default
         notes.append(quick_note)
     if custom_note.strip():
         notes.append(custom_note.strip())
@@ -336,14 +392,20 @@ def get_next_superset_name() -> str:
     return f"Superset-{counter}"
 
 
-def create_exercise_variant_inputs(df_ex: pd.DataFrame, key_prefix: str = ""):
+def create_exercise_variant_inputs(df_ex: pd.DataFrame, key_prefix: str = "", body_part_filter: str = "All"):
     """Create separate exercise and variant dropdowns that update dynamically"""
     col1, col2 = st.columns([2, 1])
+    
+    # Filter exercises by body part
+    if body_part_filter != "All":
+        df_filtered = filter_exercises_by_body_part(df_ex, body_part_filter)
+    else:
+        df_filtered = df_ex
     
     with col1:
         exercise = st.selectbox(
             "Exercise", 
-            options=df_ex["exercise"].unique().tolist() if not df_ex.empty else [],
+            options=df_filtered["exercise"].unique().tolist() if not df_filtered.empty else [],
             key=f"{key_prefix}_exercise" if key_prefix else None
         )
     
@@ -529,8 +591,14 @@ def search_exercise_history(df_history: pd.DataFrame, exercise: str, variant: st
             filtered_df = filtered_df[filtered_df.get("variant", "") == variant]
     
     # Sort by date descending to get most recent first
-    if 'date' in filtered_df.columns:
-        filtered_df = filtered_df.sort_values('date', ascending=False)
+    date_col = None
+    if 'workout_date' in filtered_df.columns:
+        date_col = 'workout_date'
+    elif 'date' in filtered_df.columns:
+        date_col = 'date'
+    
+    if date_col:
+        filtered_df = filtered_df.sort_values(date_col, ascending=False)
     
     return filtered_df
 
@@ -582,7 +650,7 @@ def display_exercise_history_search(df_history: pd.DataFrame, df_ex: pd.DataFram
                 st.markdown(f"**Recent history for {search_exercise}**" + (f" ({search_variant})" if search_variant else ""))
                 
                 # Display last 10 entries
-                display_cols = ['date', 'exercise', 'variant', 'weight', 'reps', 'sets', 'rpe', 'notes']
+                display_cols = ['workout_date', 'date', 'exercise', 'variant', 'weight', 'reps', 'sets', 'rpe', 'notes']
                 available_cols = [col for col in display_cols if col in history_results.columns]
                 
                 st.dataframe(
@@ -612,12 +680,13 @@ def display_exercise_history_search(df_history: pd.DataFrame, df_ex: pd.DataFram
                 st.markdown(f"**Last entries for {search_muscle} exercises:**")
                 
                 # Get the most recent entry for each exercise
-                if 'date' in history_results.columns:
+                date_col = 'workout_date' if 'workout_date' in history_results.columns else 'date'
+                if date_col in history_results.columns:
                     latest_entries = history_results.groupby(['exercise', 'variant']).first().reset_index()
                 else:
                     latest_entries = history_results.groupby(['exercise', 'variant']).last().reset_index()
                 
-                display_cols = ['exercise', 'variant', 'date', 'weight', 'reps', 'sets', 'rpe']
+                display_cols = ['exercise', 'variant', 'workout_date', 'date', 'weight', 'reps', 'sets', 'rpe']
                 available_cols = [col for col in display_cols if col in latest_entries.columns]
                 
                 st.dataframe(
@@ -963,101 +1032,138 @@ with strength_tab:
     st.session_state.setdefault("superset_counter", 1)
     st.session_state.setdefault("dropset_counter", 1)
 
-    c1, c2, c3 = st.columns([1,1,2])
+    c1, c2 = st.columns([1,2])
     with c1:
         workout_date = st.date_input("Workout date", value=today_local_date(), key="strength_date")
-    with c2:
-        session_name = st.text_input("Session name (optional)", key="strength_session")
-    with c3:
-        notes_global = st.text_input("Session notes (optional)", key="strength_notes")
-
-    # Stopwatch section
-    st.markdown("---")
-    st.subheader("⏱️ Rest Timer")
-    
-    # Initialize stopwatch state
-    if "stopwatch_start_time" not in st.session_state:
-        st.session_state.stopwatch_start_time = None
-    if "stopwatch_elapsed" not in st.session_state:
-        st.session_state.stopwatch_elapsed = 0.0
-    if "stopwatch_running" not in st.session_state:
-        st.session_state.stopwatch_running = False
-    
-    # Stopwatch display and controls
-    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
-    
-    with col1:
-        # Calculate current elapsed time
-        if st.session_state.stopwatch_running and st.session_state.stopwatch_start_time:
-            current_time = time.time()
-            total_elapsed = st.session_state.stopwatch_elapsed + (current_time - st.session_state.stopwatch_start_time)
-        else:
-            total_elapsed = st.session_state.stopwatch_elapsed
-        
-        # Format time display
-        minutes = int(total_elapsed // 60)
-        seconds = int(total_elapsed % 60)
-        time_display = f"{minutes:02d}:{seconds:02d}"
-        
-        # Display timer with large font
-        st.markdown(f"### ⏱️ {time_display}")
-    
-    with col2:
-        if st.button("▶️ Start", disabled=st.session_state.stopwatch_running, use_container_width=True):
-            st.session_state.stopwatch_running = True
-            st.session_state.stopwatch_start_time = time.time()
-            st.rerun()
-    
-    with col3:
-        if st.button("⏸️ Pause", disabled=not st.session_state.stopwatch_running, use_container_width=True):
-            if st.session_state.stopwatch_start_time:
-                current_time = time.time()
-                st.session_state.stopwatch_elapsed += (current_time - st.session_state.stopwatch_start_time)
-            st.session_state.stopwatch_running = False
-            st.session_state.stopwatch_start_time = None
-            st.rerun()
-    
-    with col4:
-        if st.button("🔄 Reset", use_container_width=True):
-            st.session_state.stopwatch_running = False
-            st.session_state.stopwatch_start_time = None
-            st.session_state.stopwatch_elapsed = 0.0
-            st.rerun()
-    
-    with col5:
-        # Quick preset buttons
-        preset_time = st.selectbox("Quick start", ["Manual", "1:00", "1:30", "2:00", "3:00", "5:00"], key="timer_preset")
-        if preset_time != "Manual" and st.button("⚡ Quick", use_container_width=True):
-            # Parse preset time and set as elapsed time
-            minutes, seconds = map(int, preset_time.split(":"))
-            target_seconds = minutes * 60 + seconds
-            st.session_state.stopwatch_elapsed = target_seconds
-            st.session_state.stopwatch_running = True
-            st.session_state.stopwatch_start_time = time.time()
-            st.rerun()
-    
-    # Auto-refresh indicator when running
-    if st.session_state.stopwatch_running:
-        # Create a placeholder for dynamic updates
-        placeholder = st.empty()
-        with placeholder.container():
-            st.info("⏱️ Timer is running... (refresh page to see current time)")
-    
-    # Rest period suggestions
-    if total_elapsed > 0:
-        if total_elapsed >= 180:  # 3 minutes
-            st.success("✅ Good rest for heavy compounds (3+ minutes)")
-        elif total_elapsed >= 120:  # 2 minutes  
-            st.info("👍 Adequate rest for moderate intensity (2+ minutes)")
-        elif total_elapsed >= 60:  # 1 minute
-            st.warning("⚡ Short rest - good for accessories (1+ minute)")
-    
     st.markdown("---")
 
     # Add exercise history search
     df_history = load_workout_history()
     if not df_history.empty:
         display_exercise_history_search(df_history, df_ex)
+
+    # Body part filter and previous workout loader
+    st.markdown("---")
+    st.subheader("🎯 Workout Setup")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.markdown("**Exercise Filter**")
+        body_part_filter = st.selectbox(
+            "Filter exercises by body part",
+            ["All", "Upper", "Lower", "Push", "Pull", "Full Body"],
+            help="Filter available exercises by movement pattern or body region"
+        )
+        
+        # Show muscle groups for selected filter
+        if body_part_filter != "All":
+            muscle_info = {
+                "Upper": "Chest, Back, Shoulders, Biceps, Triceps, Lats, Traps",
+                "Lower": "Quads, Hamstrings, Glutes, Calves, Hip Flexors",
+                "Push": "Chest, Shoulders, Triceps, Front/Side Delts",
+                "Pull": "Back, Biceps, Lats, Traps, Rear Delts",
+                "Full Body": "Compound movements (Upper + Lower)"
+            }
+            st.caption(f"*Includes: {muscle_info.get(body_part_filter, '')}*")
+    
+    with col2:
+        st.markdown("**Previous Workout**")
+        
+        # Get available previous workouts
+        if not df_history.empty:
+            # Ensure workout_date is datetime
+            df_history['workout_date'] = pd.to_datetime(df_history['workout_date'], errors='coerce')
+            
+            # Get unique workout dates (last 5)
+            unique_dates = df_history['workout_date'].dropna().dt.date.unique()
+            unique_dates = sorted(unique_dates, reverse=True)[:5]  # Last 5 workouts
+            
+            if unique_dates:
+                # Convert dates to strings for selectbox
+                date_options = [date.strftime('%Y-%m-%d') for date in unique_dates]
+                
+                selected_date_str = st.selectbox(
+                    "Choose workout to load",
+                    options=date_options,
+                    help="Select from your last 5 workout dates"
+                )
+                
+                # Show preview of selected workout
+                selected_date = pd.to_datetime(selected_date_str).date()
+                selected_workout = df_history[df_history['workout_date'].dt.date == selected_date]
+                exercise_count = selected_workout['exercise'].nunique()
+                set_count = len(selected_workout)
+                st.caption(f"*{exercise_count} exercises, {set_count} sets*")
+                
+                if st.button("📋 Load Selected Workout", help="Load the selected workout into current session"):
+                    selected_workout_data = df_history[df_history['workout_date'].dt.date == selected_date].copy()
+                    
+                    if not selected_workout_data.empty:
+                        # Convert to the format expected by workout_rows
+                        loaded_rows = []
+                        for _, row in selected_workout_data.iterrows():
+                            # Helper function to safely convert values
+                            def safe_int(value, default=0):
+                                try:
+                                    if pd.isna(value):
+                                        return default
+                                    return int(float(value))
+                                except (ValueError, TypeError):
+                                    return default
+                            
+                            def safe_float(value, default=0.0):
+                                try:
+                                    if pd.isna(value):
+                                        return default
+                                    return float(value)
+                                except (ValueError, TypeError):
+                                    return default
+                            
+                            def safe_bool(value, default=False):
+                                try:
+                                    if pd.isna(value):
+                                        return default
+                                    return bool(value)
+                                except (ValueError, TypeError):
+                                    return default
+                            
+                            workout_row = {
+                                "workout_date": workout_date.isoformat(),  # Use current selected date
+                                "exercise": str(row.get("exercise", "")).strip(),
+                                "variant": str(row.get("variant", "")).strip(),
+                                "set_no": safe_int(row.get("set_no"), 1),
+                                "weight": safe_float(row.get("weight"), 0),
+                                "weight_unit": str(row.get("weight_unit", "kg")).strip(),
+                                "weight_type": str(row.get("weight_type", "Standard")).strip(),
+                                "resistance_level": str(row.get("resistance_level", "")).strip(),
+                                "add_bodyweight": safe_bool(row.get("add_bodyweight"), False),
+                                "weight_description": str(row.get("weight_description", "")).strip(),
+                                "reps": safe_int(row.get("reps"), 0),
+                                "rpe": safe_float(row.get("rpe"), 6.0),
+                                "pain": safe_float(row.get("pain"), 0.0),
+                                "set_type": str(row.get("set_type", "normal")).strip(),
+                                "superset_group": str(row.get("superset_group", "")).strip(),
+                                "superset_part": str(row.get("superset_part", "")).strip(),
+                                "dropset_group": str(row.get("dropset_group", "")).strip(),
+                                "drop_no": safe_int(row.get("drop_no"), None) if not pd.isna(row.get("drop_no")) else None,
+                                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                                "notes": str(row.get("notes", "")).strip(),
+                            }
+                            loaded_rows.append(workout_row)
+                        
+                        # Add to current workout
+                        st.session_state["workout_rows"].extend(loaded_rows)
+                        
+                        st.success(f"✅ Loaded {len(loaded_rows)} sets from {selected_date_str}")
+                        st.balloons()
+                        save_session_state()  # Save the loaded workout
+                    else:
+                        st.warning("No workout data found for selected date")
+            else:
+                st.info("No previous workouts available")
+        else:
+            st.info("No workout history available")
 
     st.subheader("Add set(s)")
     
@@ -1108,7 +1214,7 @@ with strength_tab:
     
     if set_type == "Normal Sets":
         # Exercise selection outside form for dynamic updates
-        exercise, variant = create_exercise_variant_inputs(df_ex, "normal")
+        exercise, variant = create_exercise_variant_inputs(df_ex, "normal", body_part_filter)
         
         with st.form("add_normal_sets_form", clear_on_submit=False):
             # Dynamic weight input based on variant
@@ -1185,7 +1291,7 @@ with strength_tab:
                 st.markdown(f"**Exercise {i+1}:**")
                 
                 # Exercise selection
-                ex, ex_variant = create_exercise_variant_inputs(df_ex, key_prefix=f"ss_{i}")
+                ex, ex_variant = create_exercise_variant_inputs(df_ex, key_prefix=f"ss_{i}", body_part_filter=body_part_filter)
                 
                 # Dynamic weight input based on variant
                 weight_info = create_weight_input(ex_variant, f"ss_{i}")
@@ -1273,7 +1379,7 @@ with strength_tab:
         st.markdown("**Configure Dropset** (Same exercise with decreasing weight/resistance)")
         
         # Exercise selection
-        exercise, variant = create_exercise_variant_inputs(df_ex, "dropset")
+        exercise, variant = create_exercise_variant_inputs(df_ex, "dropset", body_part_filter)
         
         with st.form("add_dropset_form", clear_on_submit=False):
             # Dropset group name
@@ -1624,13 +1730,12 @@ with strength_tab:
             st.warning("No rows to save.")
         else:
             df_sets = df_from_rows(st.session_state["workout_rows"], kind="strength").copy()
-            df_sets["session_name"] = session_name; df_sets["session_notes"] = notes_global
             df_out = merge_with_exercise_meta(df_sets, load_exercises())
             cols_first = [
-                "workout_date","session_name","exercise","variant","set_no","weight","weight_unit","weight_type",
+                "workout_date","exercise","variant","set_no","weight","weight_unit","weight_type",
                 "resistance_level","add_bodyweight","weight_description","reps","rpe","pain",
                 "set_type","superset_group","superset_part","dropset_group","drop_no","timestamp","notes",
-                "session_notes","primary_muscle","secondary_muscle"
+                "primary_muscle","secondary_muscle","tertiary_muscle"
             ]
             df_out = df_out[[c for c in cols_first if c in df_out.columns]]
             
@@ -1931,13 +2036,23 @@ with analytics_tab:
             vol = float(r.get("row_volume", 0))
             prim = str(r.get("primary_muscle", "")).strip()
             sec = str(r.get("secondary_muscle", "")).strip()
-            if prim:
-                rows.append({"date": d, "muscle": prim, "volume": vol*1.0})
-            if sec:
-                rows.append({"date": d, "muscle": sec, "volume": vol*0.5})
+            tert = str(r.get("tertiary_muscle", "")).strip()
+            
+            # Primary muscle gets full volume
+            if prim and prim.lower() != "none":
+                rows.append({"date": d, "muscle": prim, "volume": vol * 1.0})
+            
+            # Secondary muscle gets half volume (only if not "None")
+            if sec and sec.lower() != "none":
+                rows.append({"date": d, "muscle": sec, "volume": vol * 0.5})
+            
+            # Tertiary muscle gets one-third volume (only if not "None")
+            if tert and tert.lower() != "none":
+                rows.append({"date": d, "muscle": tert, "volume": vol * (1/3)})
+        
         df_m = pd.DataFrame(rows)
         if df_m.empty:
-            st.info("No muscle metadata found in workouts. Make sure exercises.xlsx includes primary/secondary.")
+            st.info("No muscle metadata found in workouts. Make sure exercises.xlsx includes primary/secondary/tertiary muscles.")
         else:
             df_m["week"] = week_period(pd.to_datetime(df_m["date"]))
             weekly = df_m.groupby(["week","muscle"], as_index=False)["volume"].sum()
@@ -2172,6 +2287,61 @@ with data_tab:
         
         # Display filtered results count
         st.info(f"Showing {len(df_filtered)} of {len(df_data)} total rows")
+        
+        # Special section for adding new exercises
+        if data_type == "exercises":
+            st.subheader("➕ Add New Exercise")
+            
+            with st.expander("Add a new exercise to the database", expanded=False):
+                with st.form("add_exercise_form"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        new_exercise = st.text_input("Exercise Name*", placeholder="e.g., Bench Press")
+                        new_variant = st.text_input("Variant", placeholder="e.g., Barbell, Dumbbell")
+                        new_primary = st.text_input("Primary Muscle*", placeholder="e.g., Chest")
+                    
+                    with col2:
+                        new_secondary = st.text_input("Secondary Muscle", placeholder="e.g., Triceps (optional)")
+                        new_tertiary = st.text_input("Tertiary Muscle", placeholder="e.g., Front Delts (optional)")
+                        
+                        # Helpful muscle group suggestions
+                        st.markdown("**Common muscle groups:**")
+                        st.markdown("Chest, Back, Shoulders, Biceps, Triceps, Quads, Hamstrings, Glutes, Calves, Core, Lats, Traps")
+                    
+                    submitted = st.form_submit_button("➕ Add Exercise", type="primary")
+                    
+                    if submitted:
+                        if not new_exercise.strip():
+                            st.error("Exercise name is required!")
+                        elif not new_primary.strip():
+                            st.error("Primary muscle is required!")
+                        else:
+                            # Create new exercise row
+                            new_row = {
+                                "exercise": new_exercise.strip(),
+                                "variant": new_variant.strip() if new_variant.strip() else "",
+                                "primary_muscle": new_primary.strip(),
+                                "secondary_muscle": new_secondary.strip() if new_secondary.strip() else "",
+                                "tertiary_muscle": new_tertiary.strip() if new_tertiary.strip() else ""
+                            }
+                            
+                            # Check for duplicates
+                            duplicate_mask = (
+                                (df_filtered["exercise"].str.lower() == new_exercise.strip().lower()) &
+                                (df_filtered["variant"].str.lower() == new_variant.strip().lower())
+                            )
+                            
+                            if duplicate_mask.any():
+                                st.warning(f"⚠️ Exercise '{new_exercise}' with variant '{new_variant}' already exists!")
+                                st.dataframe(df_filtered[duplicate_mask], use_container_width=True)
+                            else:
+                                # Add to dataframe
+                                df_filtered = pd.concat([df_filtered, pd.DataFrame([new_row])], ignore_index=True)
+                                st.success(f"✅ Added '{new_exercise}' to the exercise database!")
+                                st.balloons()
+            
+            st.divider()
         
         # Data editing section
         st.subheader("✏️ Edit Data")
