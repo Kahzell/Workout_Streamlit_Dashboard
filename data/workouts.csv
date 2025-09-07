@@ -1,9 +1,33 @@
 workout_date,exercise,variant,set_no,weight,weight_unit,weight_type,resistance_level,add_bodyweight,weight_description,reps,rpe,pain,set_type,superset_group,superset_part,dropset_group,drop_no,timestamp,notes,primary_muscle,secondary_muscle,tertiary_muscle
-2025-09-06,Neck curl,Weighted,1,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,nan,nan
-2025-09-06,Neck curl,Weighted,1,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,nan,nan
-2025-09-06,Neck curl,Weighted,2,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,nan,nan
-2025-09-06,Neck curl,Weighted,2,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,nan,nan
-2025-09-06,Neck extension,Weighted,1,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,nan,nan
-2025-09-06,Neck extension,Weighted,1,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,nan,nan
-2025-09-06,Neck extension,Weighted,2,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,nan,nan
-2025-09-06,Neck extension,Weighted,2,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,nan,nan
+2025-09-06,Neck curl,Weighted,1,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,,
+2025-09-06,Neck curl,Weighted,1,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,,
+2025-09-06,Neck curl,Weighted,2,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,,
+2025-09-06,Neck curl,Weighted,2,4.0,kg,Standard,,False,4.0kg,25,8.0,0.0,normal,,,,,2025-09-06T19:58:48,,Neck,,
+2025-09-06,Neck extension,Weighted,1,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,,
+2025-09-06,Neck extension,Weighted,1,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,,
+2025-09-06,Neck extension,Weighted,2,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,,
+2025-09-06,Neck extension,Weighted,2,10.0,kg,Standard,,False,10.0kg,25,9.5,0.0,normal,,,,,2025-09-06T19:59:22,,Neck,,
+2025-09-07,Bicep curl,,1,12.0,kg,Standard,,False,12.0kg,40,8.0,0.0,normal,,,,,2025-09-07T08:26:29,Kettlebell,Biceps,Forearms,nan
+2025-09-07,Bicep curl,,1,12.0,kg,Standard,,False,12.0kg,40,8.0,0.0,normal,,,,,2025-09-07T08:26:29,Kettlebell,Biceps,Forearms,nan
+2025-09-07,Bicep curl,,2,16.0,kg,Standard,,False,16.0kg,20,7.0,0.0,normal,,,,,2025-09-07T08:27:22,Kettlebell,Biceps,Forearms,nan
+2025-09-07,Bicep curl,,2,16.0,kg,Standard,,False,16.0kg,20,7.0,0.0,normal,,,,,2025-09-07T08:27:22,Kettlebell,Biceps,Forearms,nan
+2025-09-07,Bicep curl,,3,16.0,kg,Standard,,False,16.0kg,20,7.0,0.0,normal,,,,,2025-09-07T08:27:22,Kettlebell,Biceps,Forearms,nan
+2025-09-07,Bicep curl,,3,16.0,kg,Standard,,False,16.0kg,20,7.0,0.0,normal,,,,,2025-09-07T08:27:22,Kettlebell,Biceps,Forearms,nan
+2025-09-07,Lat pulldown,Neutral grip,1,55.0,kg,Standard,,False,55.0kg,12,7.5,1.5,normal,,,,,2025-09-07T08:28:34,,Lats,Biceps,Upper back
+2025-09-07,Lat pulldown,Neutral grip,1,55.0,kg,Standard,,False,55.0kg,12,7.5,1.5,normal,,,,,2025-09-07T08:28:34,,Lats,Biceps,Upper back
+2025-09-07,Lat pulldown,Neutral grip,1,55.0,kg,Standard,,False,55.0kg,12,7.5,1.5,normal,,,,,2025-09-07T08:28:34,,Lats,Biceps,Upper back
+2025-09-07,Lat pulldown,Neutral grip,2,55.0,kg,Standard,,False,55.0kg,12,7.5,1.5,normal,,,,,2025-09-07T08:28:34,,Lats,Biceps,Upper back
+2025-09-07,Lat pulldown,Neutral grip,2,55.0,kg,Standard,,False,55.0kg,12,7.5,1.5,normal,,,,,2025-09-07T08:28:34,,Lats,Biceps,Upper back
+2025-09-07,Lat pulldown,Neutral grip,2,55.0,kg,Standard,,False,55.0kg,12,7.5,1.5,normal,,,,,2025-09-07T08:28:34,,Lats,Biceps,Upper back
+2025-09-07,Bench Press,Barbell,1,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,Barbell,1,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,Barbell,1,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,Barbell,1,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,Barbell,2,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,Barbell,2,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,Barbell,2,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,Barbell,2,40.0,kg,Standard,,False,40.0kg,12,5.5,1.5,normal,,,,,2025-09-07T08:29:08,,Chest,Triceps,Front delt
+2025-09-07,Bench Press,,3,0.5,kg,Standard,,True,0.5kg + BW,12,5.5,1.0,normal,,,,,2025-09-07T08:30:01,Pike push up,Chest,Triceps,Front delt
+2025-09-07,Bench Press,,3,0.5,kg,Standard,,True,0.5kg + BW,12,5.5,1.0,normal,,,,,2025-09-07T08:30:01,Pike push up,Chest,Triceps,Front delt
+2025-09-07,Bench Press,,3,0.5,kg,Standard,,True,0.5kg + BW,12,5.5,1.0,normal,,,,,2025-09-07T08:30:01,Pike push up,Chest,Triceps,Front delt
+2025-09-07,Bench Press,,3,0.5,kg,Standard,,True,0.5kg + BW,12,5.5,1.0,normal,,,,,2025-09-07T08:30:01,Pike push up,Chest,Triceps,Front delt
