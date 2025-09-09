@@ -37,11 +37,17 @@ workout_date,exercise,variant,set_no,weight,weight_unit,weight_type,resistance_l
 2025-09-07,Triceps Pushdown,Bar,2,25.0,kg,Standard,,False,25.0kg,20,7.0,0.5,normal,,,,,2025-09-07T08:36:54,,Triceps,,
 2025-09-07,Triceps Pushdown,Bar,3,25.0,kg,Standard,,False,25.0kg,20,7.0,0.5,normal,,,,,2025-09-07T08:36:54,,Triceps,,
 2025-09-07,Triceps Pushdown,Bar,3,25.0,kg,Standard,,False,25.0kg,20,7.0,0.5,normal,,,,,2025-09-07T08:36:54,,Triceps,,
-2025-09-09,Neck curl,,1,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,nan,nan
-2025-09-09,Neck curl,,1,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,nan,nan
-2025-09-09,Neck curl,,2,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,nan,nan
-2025-09-09,Neck curl,,2,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,nan,nan
-2025-09-09,Neck extension,,1,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,nan,nan
-2025-09-09,Neck extension,,1,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,nan,nan
-2025-09-09,Neck extension,,2,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,nan,nan
-2025-09-09,Neck extension,,2,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,nan,nan
+2025-09-09,Neck curl,,1,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,,
+2025-09-09,Neck curl,,1,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,,
+2025-09-09,Neck curl,,2,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,,
+2025-09-09,Neck curl,,2,5.0,kg,Standard,,False,5.0kg,25,7.5,0.0,normal,,,,,2025-09-09T18:16:16,,Neck,,
+2025-09-09,Neck extension,,1,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,,
+2025-09-09,Neck extension,,1,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,,
+2025-09-09,Neck extension,,2,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,,
+2025-09-09,Neck extension,,2,7.0,kg,Standard,,False,7.0kg,30,8.0,0.0,normal,,,,,2025-09-09T18:16:39,,Neck,,
+2025-09-09,Romanian Deadlift,Barbell,1,50.0,kg,Standard,,False,50.0kg,10,6.5,1.5,normal,,,,,2025-09-09T19:00:08,Rather uncomfortable stretch,Hamstrings,Glutes,nan
+2025-09-09,Romanian Deadlift,Barbell,1,50.0,kg,Standard,,False,50.0kg,10,6.5,1.5,normal,,,,,2025-09-09T19:00:08,Rather uncomfortable stretch,Hamstrings,Glutes,nan
+2025-09-09,Romanian Deadlift,Barbell,1,50.0,kg,Standard,,False,50.0kg,10,6.5,1.5,normal,,,,,2025-09-09T19:00:08,Rather uncomfortable stretch,Hamstrings,Glutes,nan
+2025-09-09,Romanian Deadlift,Barbell,2,50.0,kg,Standard,,False,50.0kg,10,6.5,1.5,normal,,,,,2025-09-09T19:00:08,Rather uncomfortable stretch,Hamstrings,Glutes,nan
+2025-09-09,Romanian Deadlift,Barbell,2,50.0,kg,Standard,,False,50.0kg,10,6.5,1.5,normal,,,,,2025-09-09T19:00:08,Rather uncomfortable stretch,Hamstrings,Glutes,nan
+2025-09-09,Romanian Deadlift,Barbell,2,50.0,kg,Standard,,False,50.0kg,10,6.5,1.5,normal,,,,,2025-09-09T19:00:08,Rather uncomfortable stretch,Hamstrings,Glutes,nan
