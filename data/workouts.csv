@@ -60,3 +60,6 @@ workout_date,exercise,variant,set_no,weight,weight_unit,weight_type,resistance_l
 2025-09-10,Incline Bench Press,Smith machine,3,60.0,kg,Standard,,False,60.0kg,8,7.5,0.5,normal,,,,,2025-09-10T10:09:13,"Rehab | Pin 6, Close grip",Chest,Triceps,Front delt
 2025-09-10,Incline Bench Press,Smith machine,3,60.0,kg,Standard,,False,60.0kg,8,7.5,0.5,normal,,,,,2025-09-10T10:09:13,"Rehab | Pin 6, Close grip",Chest,Triceps,Front delt
 2025-09-10,Incline Bench Press,Smith machine,3,60.0,kg,Standard,,False,60.0kg,8,7.5,0.5,normal,,,,,2025-09-10T10:09:13,"Rehab | Pin 6, Close grip",Chest,Triceps,Front delt
+2025-09-10,Helm's row,Dumbbell,1,22.0,kg,Standard,,False,22.0kg,12,8.0,0.5,normal,,,,,2025-09-10T10:22:01,,Upper back,Lats,nan
+2025-09-10,Helm's row,Dumbbell,2,22.0,kg,Standard,,False,22.0kg,12,8.0,0.5,normal,,,,,2025-09-10T10:22:01,,Upper back,Lats,nan
+2025-09-10,Helm's row,Dumbbell,3,22.0,kg,Standard,,False,22.0kg,12,8.0,0.5,normal,,,,,2025-09-10T10:22:01,,Upper back,Lats,nan
